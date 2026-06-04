@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#1D9E75">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Sempioncino">
+<title>Bar Sempioncino</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f5f5;color:#1a1a1a;min-height:100vh}
+  .topbar{background:#1D9E75;color:#fff;padding:14px 16px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:100;box-shadow:0 2px 8px rgba(0,0,0,0.15)}
+  .topbar-icon{width:32px;height:32px;background:rgba(255,255,255,0.2);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:18px}
+  .topbar-title{font-size:17px;font-weight:600}
+  .topbar-sub{font-size:12px;opacity:0.8}
+  .tabs{display:flex;background:#fff;border-bottom:1px solid #e8e8e8;position:sticky;top:60px;z-index:99}
+  .tab{flex:1;padding:12px 4px;text-align:center;font-size:12px;color:#888;border:none;background:none;cursor:pointer;border-bottom:2px solid transparent;font-weight:500;transition:all 0.2s}
+  .tab.active{color:#1D9E75;border-bottom-color:#1D9E75}
+  .tab-icon{font-size:20px;display:block;margin-bottom:2px}
+  .page{display:none;padding:16px;max-width:500px;margin:0 auto}
+  .page.active{display:block}
+  .card{background:#fff;border-radius:16px;padding:16px;margin-bottom:12px;box-shadow:0 1px 4px rgba(0,0,0,0.06)}
+  .card-title{font-size:12px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:12px}
+  .field{margin-bottom:12px}
+  .field label{display:block;font-size:13px;color:#666;margin-bottom:5px;font-weight:500}
+  .field input,.field select{width:100%;padding:12px 14px;border:1.5px solid #e8e8e8;border-radius:10px;font-size:16px;color:#1a1a1a;background:#fff;appearance:none;-webkit-appearance:none}
+  .field input:focus,.field select:focus{outline:none;border-color:#1D9E75}
+  .field input[readonly]{background:#f8f8f8;color:#888}
+  .field input:disabled{background:#f8f8f8;color:#bbb}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .check-row{display:flex;align-items:center;gap:10px;padding:12px 0;border-top:1px solid #f0f0f0;margin-top:4px}
+  .check-row input[type=checkbox]{width:20px;height:20px;accent-color:#1D9E75;cursor:pointer}
+  .check-row label{font-size:14px;color:#444;cursor:pointer}
+  .btn-save{width:100%;padding:14px;background:#1D9E75;color:#fff;border:none;border-radius:12px;font-size:16px;font-weight:600;cursor:pointer;margin-top:8px;transition:opacity 0.2s}
+  .btn-save:active{opacity:0.8}
+  .btn-save:disabled{opacity:0.4;cursor:not-allowed}
+  .btn-outline{width:100%;padding:12px;background:#fff;color:#1D9E75;border:1.5px solid #1D9E75;border-radius:12px;font-size:15px;font-weight:600;cursor:pointer;margin-top:8px}
+  .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);padding:12px 24px;border-radius:24px;font-size:14px;font-weight:500;z-index:999;display:none;white-space:nowrap;box-shadow:0 4px 16px rgba(0,0,0,0.15)}
+  .toast.ok{background:#1D9E75;color:#fff}
+  .toast.err{background:#E24B4A;color:#fff}
+  .stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+  .stat{background:#f0faf6;border-radius:12px;padding:12px}
+  .stat-label{font-size:11px;color:#0F6E56;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:4px}
+  .stat-value{font-size:20px;font-weight:700;color:#085041}
+  .stat.full{grid-column:1/-1;background:#1D9E75}
+  .stat.full .stat-label{color:rgba(255,255,255,0.8)}
+  .stat.full .stat-value{color:#fff;font-size:24px}
+  .entry-list{display:flex;flex-direction:column;gap:8px}
+  .entry{background:#fff;border:1.5px solid #f0f0f0;border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:12px}
+  .entry-date{font-size:22px;font-weight:700;color:#1D9E75;min-width:32px;text-align:center}
+  .entry-info{flex:1}
+  .entry-day{font-size:12px;color:#888;margin-bottom:2px}
+  .entry-amounts{display:flex;gap:10px;flex-wrap:wrap}
+  .entry-chip{font-size:13px;font-weight:500;color:#1a1a1a}
+  .entry-chip span{color:#888;font-weight:400}
+  .entry-note{font-size:11px;background:#fff3e0;color:#e65100;padding:2px 8px;border-radius:20px;display:inline-block;margin-top:4px}
+  .entry-riposo{font-size:11px;background:#f5f5f5;color:#888;padding:2px 8px;border-radius:20px;display:inline-block;margin-top:4px}
+  .del-btn{background:#fff5f5;border:none;color:#E24B4A;width:32px;height:32px;border-radius:8px;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+  .empty{text-align:center;padding:40px 20px;color:#aaa}
+  .empty-icon{font-size:48px;margin-bottom:12px}
+  .empty p{font-size:14px}
+  .loading{text-align:center;padding:30px;color:#1D9E75;font-size:14px}
+  .mese-bar{display:flex;gap:8px;margin-bottom:12px}
+  .mese-bar select{flex:1;padding:10px 12px;border:1.5px solid #e8e8e8;border-radius:10px;font-size:15px;color:#1a1a1a;background:#fff}
+  .refresh-btn{padding:10px 14px;background:#f0faf6;border:1.5px solid #1D9E75;border-radius:10px;color:#1D9E75;font-size:14px;font-weight:600;cursor:pointer}
+  .install-banner{background:#fff3cd;border:1.5px solid #ffc107;border-radius:12px;padding:12px 14px;margin-bottom:12px;display:none}
+  .install-banner p{font-size:13px;color:#856404;margin-bottom:8px}
+  .install-banner button{background:#ffc107;color:#1a1a1a;border:none;padding:8px 16px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer}
+  .chart-bar-wrap{margin-top:8px}
+  .chart-row{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+  .chart-label{font-size:12px;color:#666;width:30px;text-align:right;flex-shrink:0}
+  .chart-bar-bg{flex:1;background:#f0f0f0;border-radius:4px;height:20px;overflow:hidden}
+  .chart-bar-fill{height:100%;background:#1D9E75;border-radius:4px;transition:width 0.5s}
+  .chart-val{font-size:12px;color:#085041;font-weight:600;width:70px;text-align:right;flex-shrink:0}
+  section.dash-section{margin-bottom:16px}
+  .dash-title{font-size:13px;font-weight:700;color:#444;margin-bottom:8px;padding-left:2px}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-icon">☕</div>
+  <div>
+    <div class="topbar-title">Bar Sempioncino</div>
+    <div class="topbar-sub">Registro cassa</div>
+  </div>
+</div>
+
+<div class="tabs">
+  <button class="tab active" onclick="showPage('inserisci',this)">
+    <span class="tab-icon">📝</span>Inserisci
+  </button>
+  <button class="tab" onclick="showPage('lista',this)">
+    <span class="tab-icon">📋</span>Lista
+  </button>
+  <button class="tab" onclick="showPage('dashboard',this)">
+    <span class="tab-icon">📊</span>Dashboard
+  </button>
+</div>
+
+<div class="install-banner" id="install-banner">
+  <p>📱 Installa l'app sul tuo telefono per usarla anche offline!</p>
+  <button onclick="installApp()">Installa app</button>
+</div>
+
+<!-- PAGINA INSERISCI -->
+<div class="page active" id="page-inserisci">
+  <div class="card">
+    <div class="card-title">Chiusura giornaliera</div>
+    <div class="row2">
+      <div class="field">
+        <label>Data</label>
+        <input type="date" id="inp-data">
+      </div>
+      <div class="field">
+        <label>Giorno</label>
+        <input type="text" id="inp-giorno" readonly>
+      </div>
+    </div>
+    <div class="row2">
+      <div class="field">
+        <label>Chiusura cassa (€)</label>
+        <input type="number" id="inp-chiusura" placeholder="0.00" step="0.01" min="0" inputmode="decimal">
+      </div>
+      <div class="field">
+        <label>Incasso Riccardo (€)</label>
+        <input type="number" id="inp-riccardo" placeholder="0.00" step="0.01" min="0" inputmode="decimal">
+      </div>
+    </div>
+    <div class="field">
+      <label>Note</label>
+      <input type="text" id="inp-note" placeholder="es. apertura ridotta, scontrino sbagliato...">
+    </div>
+    <div class="check-row">
+      <input type="checkbox" id="inp-riposo">
+      <label for="inp-riposo">Giorno di riposo</label>
+    </div>
+    <button class="btn-save" id="btn-salva" onclick="salva()">💾 Salva su Google Sheets</button>
+  </div>
+</div>
+
+<!-- PAGINA LISTA -->
+<div class="page" id="page-lista">
+  <div class="mese-bar">
+    <select id="sel-mese" onchange="caricaMese()">
+      <option value="0">Gennaio</option><option value="1">Febbraio</option>
+      <option value="2">Marzo</option><option value="3">Aprile</option>
+      <option value="4">Maggio</option><option value="5">Giugno</option>
+      <option value="6">Luglio</option><option value="7">Agosto</option>
+      <option value="8">Settembre</option><option value="9">Ottobre</option>
+      <option value="10">Novembre</option><option value="11">Dicembre</option>
+    </select>
+    <select id="sel-anno" onchange="caricaMese()">
+      <option value="2025">2025</option>
+      <option value="2026" selected>2026</option>
+      <option value="2027">2027</option>
+    </select>
+    <button class="refresh-btn" onclick="caricaMese()">↻</button>
+  </div>
+
+  <div class="card" style="padding:12px">
+    <div class="stat-grid">
+      <div class="stat"><div class="stat-label">Cassa</div><div class="stat-value" id="s-cassa">—</div></div>
+      <div class="stat"><div class="stat-label">Riccardo</div><div class="stat-value" id="s-ric">—</div></div>
+      <div class="stat full"><div class="stat-label">Totale mese</div><div class="stat-value" id="s-tot">—</div></div>
+    </div>
+  </div>
+
+  <div id="lista-container">
+    <div class="loading">⏳ Caricamento...</div>
+  </div>
+</div>
+
+<!-- PAGINA DASHBOARD -->
+<div class="page" id="page-dashboard">
+  <div class="mese-bar">
+    <select id="dash-anno" onchange="caricaDashboard()">
+      <option value="2025">2025</option>
+      <option value="2026" selected>2026</option>
+      <option value="2027">2027</option>
+    </select>
+    <button class="refresh-btn" onclick="caricaDashboard()">↻</button>
+  </div>
+
+  <div id="dash-container">
+    <div class="loading">⏳ Caricamento dati...</div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwQCZRVkWjhfAFG9Xg_4LwTaykkbDlEMeNHK-BbwFhznOLiQKX7cb7vIj-2eUTsq5Y-/exec';
+const GIORNI = ['domenica','lunedì','martedì','mercoledì','giovedì','venerdì','sabato'];
+const MESI_NOMI = ['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
+
+let deferredPrompt = null;
+
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  deferredPrompt = e;
+  document.getElementById('install-banner').style.display = 'block';
+});
+
+function installApp() {
+  if(deferredPrompt) {
+    deferredPrompt.prompt();
+    deferredPrompt.userChoice.then(() => {
+      deferredPrompt = null;
+      document.getElementById('install-banner').style.display = 'none';
+    });
+  }
+}
+
+function showPage(id, btn) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('page-'+id).classList.add('active');
+  btn.classList.add('active');
+  if(id === 'lista') caricaMese();
+  if(id === 'dashboard') caricaDashboard();
+}
+
+const inpData = document.getElementById('inp-data');
+inpData.value = new Date().toISOString().slice(0,10);
+document.getElementById('sel-mese').value = new Date().getMonth();
+aggiornaGiorno();
+inpData.addEventListener('change', aggiornaGiorno);
+
+function aggiornaGiorno() {
+  const d = new Date(inpData.value + 'T12:00:00');
+  document.getElementById('inp-giorno').value = GIORNI[d.getDay()];
+}
+
+document.getElementById('inp-riposo').addEventListener('change', function() {
+  const c = document.getElementById('inp-chiusura');
+  const r = document.getElementById('inp-riccardo');
+  c.disabled = r.disabled = this.checked;
+  if(this.checked) { c.value = ''; r.value = ''; document.getElementById('inp-note').value = 'RIPOSO'; }
+  else if(document.getElementById('inp-note').value === 'RIPOSO') document.getElementById('inp-note').value = '';
+});
+
+function mostraToast(msg, tipo) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast ' + tipo;
+  t.style.display = 'block';
+  setTimeout(() => t.style.display = 'none', 3000);
+}
+
+async function salva() {
+  const data = inpData.value;
+  if(!data) { mostraToast('❌ Inserisci una data', 'err'); return; }
+  const chiusura = parseFloat(document.getElementById('inp-chiusura').value) || 0;
+  const riccardo = parseFloat(document.getElementById('inp-riccardo').value) || 0;
+  const riposo = document.getElementById('inp-riposo').checked;
+  if(!riposo && chiusura === 0) { mostraToast('❌ Inserisci la chiusura cassa', 'err'); return; }
+
+  const btn = document.getElementById('btn-salva');
+  btn.disabled = true; btn.textContent = '⏳ Salvataggio...';
+
+  const d = new Date(data + 'T12:00:00');
+  const payload = {
+    action: 'salvaRiga',
+    mese: d.getMonth(),
+    anno: d.getFullYear(),
+    data, giorno: GIORNI[d.getDay()],
+    chiusura: riposo ? 0 : chiusura,
+    riccardo: riposo ? 0 : riccardo,
+    note: document.getElementById('inp-note').value,
+    riposo
+  };
+
+  try {
+    const res = await fetch(SCRIPT_URL, {
+      method: 'POST',
+      headers: {'Content-Type': 'text/plain'},
+      body: JSON.stringify(payload)
+    });
+    const json = await res.json();
+    if(json.ok) {
+      mostraToast('✅ Salvato su Google Sheets!', 'ok');
+      document.getElementById('inp-chiusura').value = '';
+      document.getElementById('inp-riccardo').value = '';
+      document.getElementById('inp-note').value = '';
+      document.getElementById('inp-riposo').checked = false;
+      document.getElementById('inp-chiusura').disabled = false;
+      document.getElementById('inp-riccardo').disabled = false;
+      inpData.value = new Date().toISOString().slice(0,10);
+      aggiornaGiorno();
+    } else {
+      mostraToast('❌ Errore: ' + (json.error || 'sconosciuto'), 'err');
+    }
+  } catch(e) {
+    mostraToast('❌ Errore di connessione', 'err');
+  }
+  btn.disabled = false;
+  btn.textContent = '💾 Salva su Google Sheets';
+}
+
+async function caricaMese() {
+  const mese = document.getElementById('sel-mese').value;
+  const anno = document.getElementById('sel-anno').value;
+  const cont = document.getElementById('lista-container');
+  cont.innerHTML = '<div class="loading">⏳ Caricamento...</div>';
+  ['s-cassa','s-ric','s-tot'].forEach(id => document.getElementById(id).textContent = '...');
+  try {
+    const res = await fetch(`${SCRIPT_URL}?action=leggiMese&mese=${mese}&anno=${anno}`);
+    const json = await res.json();
+    renderLista(json.righe || []);
+  } catch(e) {
+    cont.innerHTML = '<div class="empty"><div class="empty-icon">📡</div><p>Errore di connessione.<br>Controlla la rete e riprova.</p></div>';
+  }
+}
+
+function renderLista(righe) {
+  const cont = document.getElementById('lista-container');
+  if(righe.length === 0) {
+    cont.innerHTML = '<div class="empty"><div class="empty-icon">📭</div><p>Nessuna giornata inserita<br>per questo mese.</p></div>';
+    ['s-cassa','s-ric','s-tot'].forEach(id => document.getElementById(id).textContent = '€0,00');
+    return;
+  }
+  let totC = 0, totR = 0;
+  righe.forEach(r => { totC += parseFloat(r.chiusura)||0; totR += parseFloat(r.riccardo)||0; });
+  document.getElementById('s-cassa').textContent = fmt(totC);
+  document.getElementById('s-ric').textContent = fmt(totR);
+  document.getElementById('s-tot').textContent = fmt(totC+totR);
+
+  const sorted = [...righe].sort((a,b) => b.data.localeCompare(a.data));
+  const html = sorted.map(r => {
+    const giorno = r.data ? r.data.slice(8) : '';
+    const mese = document.getElementById('sel-mese');
+    const nota = r.note === 'RIPOSO'
+      ? '<span class="entry-riposo">RIPOSO</span>'
+      : r.note ? `<span class="entry-note">${r.note}</span>` : '';
+    const cassa = parseFloat(r.chiusura)||0;
+    const ric = parseFloat(r.riccardo)||0;
+    const amounts = r.note === 'RIPOSO' ? '' : `
+      <div class="entry-amounts">
+        <div class="entry-chip"><span>Cassa </span>${fmt(cassa)}</div>
+        ${ric > 0 ? `<div class="entry-chip"><span>Riccardo </span>${fmt(ric)}</div>` : ''}
+      </div>`;
+    return `<div class="entry">
+      <div class="entry-date">${giorno}</div>
+      <div class="entry-info">
+        <div class="entry-day">${r.giorno || ''}</div>
+        ${amounts}
+        ${nota}
+      </div>
+      <button class="del-btn" onclick="elimina('${r.data}',${new Date(r.data+'T12:00:00').getMonth()},${new Date(r.data+'T12:00:00').getFullYear()})">🗑</button>
+    </div>`;
+  }).join('');
+  cont.innerHTML = `<div class="entry-list">${html}</div>`;
+}
+
+async function elimina(data, mese, anno) {
+  if(!confirm('Eliminare la giornata del ' + data + '?')) return;
+  try {
+    const res = await fetch(SCRIPT_URL, {
+      method: 'POST',
+      headers: {'Content-Type': 'text/plain'},
+      body: JSON.stringify({action:'eliminaRiga', mese, anno, data})
+    });
+    const json = await res.json();
+    if(json.ok) { mostraToast('✅ Eliminato', 'ok'); caricaMese(); }
+    else mostraToast('❌ ' + (json.error||'Errore'), 'err');
+  } catch(e) { mostraToast('❌ Errore di connessione', 'err'); }
+}
+
+async function caricaDashboard() {
+  const anno = document.getElementById('dash-anno').value;
+  const cont = document.getElementById('dash-container');
+  cont.innerHTML = '<div class="loading">⏳ Caricamento dati anno ' + anno + '...</div>';
+  const promises = Array.from({length:12},(_,i) =>
+    fetch(`${SCRIPT_URL}?action=leggiMese&mese=${i}&anno=${anno}`)
+      .then(r=>r.json()).then(j=>({mese:i,righe:j.righe||[]})).catch(()=>({mese:i,righe:[]}))
+  );
+  const results = await Promise.all(promises);
+  renderDashboard(results, anno);
+}
+
+function renderDashboard(results, anno) {
+  const cont = document.getElementById('dash-container');
+  const mensili = results.map(({mese, righe}) => {
+    const totC = righe.reduce((s,r)=>s+(parseFloat(r.chiusura)||0),0);
+    const totR = righe.reduce((s,r)=>s+(parseFloat(r.riccardo)||0),0);
+    const ggLav = righe.filter(r=>r.note!=='RIPOSO'&&(parseFloat(r.chiusura)||0)>0).length;
+    return {mese, totC, totR, tot: totC+totR, ggLav};
+  });
+
+  const totAnno = mensili.reduce((s,m)=>s+m.tot,0);
+  const totCAnno = mensili.reduce((s,m)=>s+m.totC,0);
+  const totRAnno = mensili.reduce((s,m)=>s+m.totR,0);
+  const mesiConDati = mensili.filter(m=>m.tot>0);
+  const maxTot = Math.max(...mensili.map(m=>m.tot),1);
+  const bestMese = mensili.reduce((a,b)=>b.tot>a.tot?b:a, mensili[0]);
+
+  const barreHTML = mensili.map(m => {
+    const pct = Math.round((m.tot/maxTot)*100);
+    return `<div class="chart-row">
+      <div class="chart-label">${MESI_NOMI[m.mese].slice(0,3)}</div>
+      <div class="chart-bar-bg"><div class="chart-bar-fill" style="width:${pct}%"></div></div>
+      <div class="chart-val">${m.tot>0?fmt(m.tot):'—'}</div>
+    </div>`;
+  }).join('');
+
+  cont.innerHTML = `
+    <div class="card">
+      <div class="stat-grid">
+        <div class="stat full"><div class="stat-label">Totale anno ${anno}</div><div class="stat-value">${fmt(totAnno)}</div></div>
+        <div class="stat"><div class="stat-label">Tot. cassa</div><div class="stat-value">${fmt(totCAnno)}</div></div>
+        <div class="stat"><div class="stat-label">Tot. Riccardo</div><div class="stat-value">${fmt(totRAnno)}</div></div>
+      </div>
+      ${bestMese && bestMese.tot > 0 ? `<div style="font-size:13px;color:#666;text-align:center;padding-top:4px">🏆 Mese migliore: <b>${MESI_NOMI[bestMese.mese]}</b> con ${fmt(bestMese.tot)}</div>` : ''}
+    </div>
+    <div class="card">
+      <div class="dash-title">Andamento mensile</div>
+      <div class="chart-bar-wrap">${barreHTML}</div>
+    </div>
+    ${mesiConDati.length > 0 ? `
+    <div class="card">
+      <div class="dash-title">Media giornaliera per mese</div>
+      <div class="entry-list">
+        ${mesiConDati.map(m=>`
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #f5f5f5">
+            <div style="font-size:14px;font-weight:600;color:#1a1a1a">${MESI_NOMI[m.mese]}</div>
+            <div style="text-align:right">
+              <div style="font-size:14px;font-weight:700;color:#1D9E75">${fmt(m.tot)}</div>
+              <div style="font-size:11px;color:#888">${m.ggLav} gg lav · media ${m.ggLav>0?fmt(m.tot/m.ggLav):'-'}/gg</div>
+            </div>
+          </div>`).join('')}
+      </div>
+    </div>` : ''}
+  `;
+}
+
+function fmt(n) {
+  return '€' + parseFloat(n||0).toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+</script>
+</body>
+</html>
