@@ -192,7 +192,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <div class="stat-grid">
       <div class="stat"><div class="stat-label">Cassa</div><div class="stat-value" id="s-cassa">—</div></div>
       <div class="stat"><div class="stat-label">Riccardo</div><div class="stat-value" id="s-ric">—</div></div>
-      <div class="stat full"><div class="stat-label">Totale mese</div><div class="stat-value" id="s-tot">—</div></div>
+      <div class="stat full"><div class="stat-label">Tot. bar + Riccardo</div><div class="stat-value" id="s-tot">—</div></div>
+      <div class="stat"><div class="stat-label">Tot. aggi</div><div class="stat-value" id="s-aggi">—</div></div>
+      <div class="stat full"><div class="stat-label">TOTALE INCASSO (bar + aggi + Riccardo)</div><div class="stat-value" id="s-totale">—</div></div>
     </div>
   </div>
   <div id="lista-container"><div class="loading">⏳ Caricamento...</div></div>
@@ -227,6 +229,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <div class="section-label">Tabacchi</div>
     <div class="ag-field"><label>Aggio tabacchi (€)</label><input type="number" id="ag-tab" placeholder="0.00" step="0.01" inputmode="decimal"></div>
     <button class="btn-save" id="btn-aggi" onclick="salvaAggi()">💾 Salva aggi</button>
+    <button class="btn-outline" onclick="caricaAggiRiepilogo()" style="margin-top:8px">↻ Carica riepilogo aggi</button>
   </div>
   <div id="aggi-riepilogo"></div>
 </div>
@@ -257,11 +260,54 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 <!-- CONFRONTO SPESE -->
 <div class="page" id="page-confronto">
   <div class="mese-bar">
-    <select id="conf-anno" onchange="renderConfronto()">
+    <select id="conf-anno">
       <option value="2025">2025</option><option value="2026" selected>2026</option><option value="2027">2027</option>
     </select>
+    <button class="refresh-btn" onclick="if(confViewAttivo==='anno')renderConfronto();else if(confViewAttivo==='mesi')confrontaMesi();else renderSpeseCategoria()">Carica</button>
   </div>
-  <div id="confronto-container"><div class="loading">⏳ Caricamento...</div></div>
+  <div style="display:flex;gap:8px;margin-bottom:12px;background:#fff;border-radius:12px;padding:4px;border:1px solid var(--beige-light)">
+    <button id="btn-view-anno" onclick="switchConfronto('anno')" style="flex:1;padding:10px;border:none;border-radius:10px;background:var(--nero);color:#fff;font-size:13px;font-weight:600;cursor:pointer">📊 Anno</button>
+    <button id="btn-view-mesi" onclick="switchConfronto('mesi')" style="flex:1;padding:10px;border:none;border-radius:10px;background:none;color:var(--nero);font-size:13px;font-weight:600;cursor:pointer">⚖️ Confronta mesi</button>
+    <button id="btn-view-spese" onclick="switchConfronto('spese')" style="flex:1;padding:10px;border:none;border-radius:10px;background:none;color:var(--nero);font-size:13px;font-weight:600;cursor:pointer">💸 Spese cat.</button>
+  </div>
+
+  <!-- Vista Anno -->
+  <div id="conf-view-anno">
+    <div id="confronto-container"><div class="loading">⏳ Caricamento...</div></div>
+  </div>
+
+  <!-- Vista Confronto Mesi -->
+  <div id="conf-view-mesi" style="display:none">
+    <div class="card">
+      <div class="card-title">Seleziona due mesi da confrontare</div>
+      <div class="row2">
+        <div class="field">
+          <label>Mese A</label>
+          <select id="conf-mese-a">
+            <option value="0">Gennaio</option><option value="1">Febbraio</option><option value="2">Marzo</option>
+            <option value="3">Aprile</option><option value="4" selected>Maggio</option><option value="5">Giugno</option>
+            <option value="6">Luglio</option><option value="7">Agosto</option><option value="8">Settembre</option>
+            <option value="9">Ottobre</option><option value="10">Novembre</option><option value="11">Dicembre</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Mese B</label>
+          <select id="conf-mese-b">
+            <option value="0">Gennaio</option><option value="1">Febbraio</option><option value="2">Marzo</option>
+            <option value="3" selected>Aprile</option><option value="4">Maggio</option><option value="5">Giugno</option>
+            <option value="6">Luglio</option><option value="7">Agosto</option><option value="8">Settembre</option>
+            <option value="9">Ottobre</option><option value="10">Novembre</option><option value="11">Dicembre</option>
+          </select>
+        </div>
+      </div>
+    </div>
+    <div id="conf-mesi-result"><div class="loading">⏳ Caricamento...</div></div>
+  </div>
+
+  <!-- Vista Spese Categoria -->
+  <div id="conf-view-spese" style="display:none">
+    <div id="conf-spese-result"></div>
+  </div>
 </div>
 
 <!-- SETTIMANE -->
@@ -284,10 +330,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 <!-- ANNO -->
 <div class="page" id="page-anno">
   <div class="mese-bar">
-    <select id="anno-sel" onchange="caricaAnno()">
+    <select id="anno-sel">
       <option value="2025">2025</option><option value="2026" selected>2026</option><option value="2027">2027</option>
     </select>
-    <button class="refresh-btn" onclick="caricaAnno()">↻</button>
+    <button class="refresh-btn" onclick="caricaAnno()">Carica</button>
   </div>
   <div id="anno-container"><div class="loading">⏳ Caricamento...</div></div>
 </div>
@@ -356,9 +402,9 @@ function showPage(id,btn){
   btn.classList.add('active');
   if(id==='lista')caricaMese();
   if(id==='settimane')caricaSettimane();
-  if(id==='confronto')renderConfronto();
-  if(id==='anno')caricaAnno();
-  if(id==='aggi')setTimeout(caricaAggiRiepilogo, 300);
+  if(id==='confronto'){document.getElementById('confronto-container').innerHTML='<div class="empty"><div class="empty-icon">📊</div><p>Clicca Carica per vedere i dati.</p></div>';}
+  if(id==='anno'){document.getElementById('anno-container').innerHTML='<div class="empty"><div class="empty-icon">🏆</div><p>Clicca Carica per vedere i dati.</p></div>';}
+  if(id==='aggi'){document.getElementById('aggi-riepilogo').innerHTML='<div class="card"><p style="color:#888;font-size:14px;text-align:center;padding:8px 0">Seleziona mese e clicca il pulsante ↻ per vedere il riepilogo.</p></div>';}
   if(id==='spese')renderSpese();
 }
 
@@ -465,8 +511,8 @@ async function caricaAggiRiepilogo(){
   }catch(e){cont.innerHTML='<div class="card"><p style="color:#888;font-size:14px;text-align:center">Errore di connessione.</p></div>';}
 }
 
-document.getElementById('ag-mese').addEventListener('change',caricaAggiRiepilogo);
-document.getElementById('ag-anno').addEventListener('change',caricaAggiRiepilogo);
+// ag-mese change - no auto load
+// ag-anno change - no auto load
 
 // === CARICA FATTURE EXCEL ===
 function categorizzaFornitore(f){
@@ -658,12 +704,18 @@ async function caricaMese(){
   const mese=document.getElementById('sel-mese').value,anno=document.getElementById('sel-anno').value;
   const cont=document.getElementById('lista-container');
   cont.innerHTML='<div class="loading">⏳ Caricamento...</div>';
-  ['s-cassa','s-ric','s-tot'].forEach(id=>document.getElementById(id).textContent='...');
-  try{const res=await jsonp({action:'leggiMese',mese,anno});ultimoMeseDati=res.righe||[];renderLista(ultimoMeseDati);}
-  catch(e){cont.innerHTML='<div class="empty"><div class="empty-icon">📡</div><p>Errore di connessione.</p></div>';}
+  ['s-cassa','s-ric','s-tot','s-aggi','s-totale'].forEach(id=>{const el=document.getElementById(id);if(el)el.textContent='...';});
+  try{
+    const res=await jsonp({action:'leggiTutto',mese,anno});
+    ultimoMeseDati=res.righe||[];
+    const a=res.aggi||{};
+    const totAggi=(parseFloat(a.lotto)||0)+(parseFloat(a.sir)||0)+(parseFloat(a.sisal)||0)+(parseFloat(a.aspan)||0)+(parseFloat(a.gratta)||0)+(parseFloat(a.macc)||0)+(parseFloat(a.tab)||0);
+    renderLista(ultimoMeseDati, totAggi);
+  }
+  catch(e){cont.innerHTML='<div class="empty"><div class="empty-icon">📡</div><p>Errore di connessione. Riprova.</p></div>';}
 }
 
-function renderLista(righe){
+function renderLista(righe, totAggi=0){
   const cont=document.getElementById('lista-container');
   if(righe.length===0){cont.innerHTML='<div class="empty"><div class="empty-icon">📭</div><p>Nessuna giornata inserita.</p></div>';['s-cassa','s-ric','s-tot'].forEach(id=>document.getElementById(id).textContent='€0,00');return;}
   let totC=0,totR=0;
@@ -671,6 +723,10 @@ function renderLista(righe){
   document.getElementById('s-cassa').textContent=fmt(totC);
   document.getElementById('s-ric').textContent=fmt(totR);
   document.getElementById('s-tot').textContent=fmt(totC+totR);
+  const elAggi=document.getElementById('s-aggi');
+  const elTotale=document.getElementById('s-totale');
+  if(elAggi)elAggi.textContent=fmt(totAggi);
+  if(elTotale)elTotale.textContent=fmt(totC+totR+totAggi);
   const sorted=[...righe].sort((a,b)=>b.data.localeCompare(a.data));
   cont.innerHTML=`<div class="entry-list">${sorted.map(r=>{
     const g=r.data?r.data.slice(8):'';
@@ -854,11 +910,169 @@ function renderAnno(results,anno){
   </div>`:''}`;
 }
 
+
+// === SWITCH CONFRONTO VIEW ===
+let confViewAttivo = 'anno';
+function switchConfronto(view) {
+  confViewAttivo = view;
+  ['anno','mesi','spese'].forEach(v => {
+    const btn = document.getElementById('btn-view-'+v);
+    const div = document.getElementById('conf-view-'+v);
+    if(btn) { btn.style.background = v===view ? 'var(--nero)' : 'none'; btn.style.color = v===view ? '#fff' : 'var(--nero)'; }
+    if(div) div.style.display = v===view ? 'block' : 'none';
+  });
+  // Dati caricati solo con pulsante Carica
+}
+
+async function confrontaMesi() {
+  const meseA = parseInt(document.getElementById('conf-mese-a').value);
+  const meseB = parseInt(document.getElementById('conf-mese-b').value);
+  const anno = parseInt(document.getElementById('conf-anno').value);
+  const cont = document.getElementById('conf-mesi-result');
+  cont.innerHTML = '<div class="loading">⏳ Caricamento...</div>';
+
+  try {
+    const [resA, resB] = await Promise.all([
+      jsonp({action:'leggiTutto', mese:meseA, anno}),
+      jsonp({action:'leggiTutto', mese:meseB, anno})
+    ]);
+
+    function calcTot(righe) {
+      return {
+        cassa: righe.reduce((s,r)=>s+(parseFloat(r.chiusura)||0),0),
+        ric: righe.reduce((s,r)=>s+(parseFloat(r.riccardo)||0),0),
+        gg: righe.filter(r=>r.note!=='RIPOSO'&&(parseFloat(r.chiusura)||0)>0).length
+      };
+    }
+    function calcAggi(a) {
+      if(!a) return 0;
+      return (parseFloat(a.lotto)||0)+(parseFloat(a.sir)||0)+(parseFloat(a.sisal)||0)+(parseFloat(a.aspan)||0)+(parseFloat(a.gratta)||0)+(parseFloat(a.macc)||0)+(parseFloat(a.tab)||0);
+    }
+
+    const tA = calcTot(resA.righe||[]);
+    const tB = calcTot(resB.righe||[]);
+    const agA = calcAggi(resA.aggi);
+    const agB = calcAggi(resB.aggi);
+    const totA = tA.cassa + tA.ric + agA;
+    const totB = tB.cassa + tB.ric + agB;
+    const speseA = totSpeseMese(meseA);
+    const speseB = totSpeseMese(meseB);
+    const utileA = totA - speseA;
+    const utileB = totB - speseB;
+
+    function diffBadge(a, b) {
+      const d = a - b;
+      const pct = b > 0 ? ((a-b)/b*100).toFixed(1) : 0;
+      if(d > 0) return `<span class="badge-up">▲ ${fmt(d)} (+${pct}%)</span>`;
+      if(d < 0) return `<span class="badge-down">▼ ${fmt(Math.abs(d))} (${pct}%)</span>`;
+      return `<span style="font-size:11px;color:#888">= uguale</span>`;
+    }
+
+    function compareRow(label, vA, vB, invertColor=false) {
+      const better = invertColor ? vA < vB : vA > vB;
+      const colA = vA === vB ? '#888' : (better ? '#3B6D11' : '#A32D2D');
+      const colB = vA === vB ? '#888' : (better ? '#A32D2D' : '#3B6D11');
+      return `<div style="display:flex;align-items:center;padding:10px 0;border-bottom:1px solid #f5f5f5">
+        <div style="flex:1;font-size:13px;color:#666">${label}</div>
+        <div style="font-size:14px;font-weight:700;color:${colA};min-width:90px;text-align:right">${fmt(vA)}</div>
+        <div style="font-size:14px;font-weight:700;color:${colB};min-width:90px;text-align:right">${fmt(vB)}</div>
+      </div>`;
+    }
+
+    cont.innerHTML = `
+      <div class="card" style="padding:12px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+          <div style="background:var(--nero);border-radius:12px;padding:12px;text-align:center">
+            <div style="font-size:11px;color:var(--beige);font-weight:600;text-transform:uppercase;margin-bottom:4px">${MESI_NOMI[meseA]}</div>
+            <div style="font-size:20px;font-weight:700;color:#fff">${fmt(totA)}</div>
+            <div style="font-size:11px;color:rgba(255,255,255,0.6);margin-top:2px">${tA.gg} giorni lav.</div>
+          </div>
+          <div style="background:var(--beige-pale);border-radius:12px;padding:12px;text-align:center;border:1px solid var(--beige-light)">
+            <div style="font-size:11px;color:#8B6914;font-weight:600;text-transform:uppercase;margin-bottom:4px">${MESI_NOMI[meseB]}</div>
+            <div style="font-size:20px;font-weight:700;color:var(--nero)">${fmt(totB)}</div>
+            <div style="font-size:11px;color:#888;margin-top:2px">${tB.gg} giorni lav.</div>
+          </div>
+        </div>
+        <div style="text-align:center;padding:8px 0;font-size:13px;color:#666">
+          Differenza: ${diffBadge(totA, totB)}
+        </div>
+      </div>
+
+      <div class="card">
+        <div style="display:flex;padding:8px 0;border-bottom:2px solid var(--beige-light);margin-bottom:4px">
+          <div style="flex:1;font-size:12px;font-weight:700;color:#888">VOCE</div>
+          <div style="font-size:12px;font-weight:700;color:var(--nero);min-width:90px;text-align:right">${MESI_NOMI[meseA].slice(0,3).toUpperCase()}</div>
+          <div style="font-size:12px;font-weight:700;color:#8B6914;min-width:90px;text-align:right">${MESI_NOMI[meseB].slice(0,3).toUpperCase()}</div>
+        </div>
+        ${compareRow('Chiusure cassa', tA.cassa, tB.cassa)}
+        ${compareRow('Incasso Riccardo', tA.ric, tB.ric)}
+        ${compareRow('Totale aggi', agA, agB)}
+        ${compareRow('Totale incassi', totA, totB)}
+        ${compareRow('Totale spese', speseA, speseB, true)}
+        ${compareRow('Media giorn.', tA.gg>0?totA/tA.gg:0, tB.gg>0?totB/tB.gg:0)}
+        <div style="display:flex;align-items:center;padding:12px 0;background:${utileA>utileB?'#EAF3DE':'#f9f9f9'};margin:0 -16px;padding:12px 16px;border-radius:0 0 12px 12px">
+          <div style="flex:1;font-size:13px;font-weight:700">UTILE NETTO</div>
+          <div style="font-size:15px;font-weight:700;color:${utileA>=0?'#3B6D11':'#A32D2D'};min-width:90px;text-align:right">${fmt(utileA)}</div>
+          <div style="font-size:15px;font-weight:700;color:${utileB>=0?'#3B6D11':'#A32D2D'};min-width:90px;text-align:right">${fmt(utileB)}</div>
+        </div>
+      </div>`;
+  } catch(e) {
+    cont.innerHTML = '<div class="empty"><div class="empty-icon">📡</div><p>Errore di connessione.</p></div>';
+  }
+}
+
+function renderSpeseCategoria() {
+  const anno = parseInt(document.getElementById('conf-anno').value);
+  const cont = document.getElementById('conf-spese-result');
+  const catPresenti = new Set();
+  for(let m=1;m<=12;m++) { Object.keys(SPESE_FATTURE[m]||{}).forEach(k=>catPresenti.add(k)); }
+
+  let html = '';
+  Array.from(catPresenti).sort().forEach(cat => {
+    const valori = Array.from({length:12},(_,i)=>(SPESE_FATTURE[i+1]||{})[cat]||0);
+    const totAnno = valori.reduce((a,b)=>a+b,0);
+    if(totAnno === 0) return;
+    const col = CAT_COLORS[cat]||'#888';
+    const maxVal = Math.max(...valori, 1);
+    const meseMax = valori.indexOf(Math.max(...valori));
+    const valsConDati = valori.filter(v=>v>0);
+    const meseMin = valori.indexOf(Math.min(...valsConDati));
+    const media = valsConDati.length > 0 ? valsConDati.reduce((a,b)=>a+b,0)/valsConDati.length : 0;
+
+    html += `<div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <div style="width:12px;height:12px;border-radius:50%;background:${col}"></div>
+          <div style="font-size:14px;font-weight:700;color:var(--nero)">${cat}</div>
+        </div>
+        <div style="font-size:13px;font-weight:700;color:${col}">${fmt(totAnno)}/anno</div>
+      </div>
+      <div style="display:flex;gap:3px;align-items:flex-end;height:50px;margin-bottom:8px">
+        ${valori.map((v,i)=>{
+          const h = v>0 ? Math.max(Math.round((v/maxVal)*46),3) : 0;
+          return `<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end" title="${MESI_NOMI[i]}: ${fmt(v)}">
+            <div style="height:${h}px;width:100%;background:${col};opacity:${v>0?0.85:0.1};border-radius:2px 2px 0 0"></div>
+          </div>`;
+        }).join('')}
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:8px">
+        ${MESI_NOMI.map(m=>m.slice(0,1)).map(l=>`<div style="flex:1;text-align:center;font-size:9px;color:#aaa">${l}</div>`).join('')}
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;font-size:11px;color:#666">
+        <span>📈 Max: <b>${MESI_NOMI[meseMax]}</b> ${fmt(valori[meseMax])}</span>
+        <span>📉 Min: <b>${MESI_NOMI[meseMin]}</b> ${fmt(valori[meseMin])}</span>
+        <span>⌀ Media: <b>${fmt(media)}/mese</b></span>
+      </div>
+    </div>`;
+  });
+
+  cont.innerHTML = html || '<div class="empty"><div class="empty-icon">📭</div><p>Nessun dato spese disponibile.</p></div>';
+}
+
 function fmt(n){return '€'+parseFloat(n||0).toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2});}
 
 // Init
 renderSpese();
-renderConfronto();
 // Data oggi
 const oggi = new Date();
 const el = document.getElementById('data-oggi');
