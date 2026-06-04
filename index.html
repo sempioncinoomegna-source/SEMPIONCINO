@@ -192,7 +192,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <div class="stat"><div class="stat-label">Cassa</div><div class="stat-value" id="s-cassa">—</div></div>
       <div class="stat"><div class="stat-label">Riccardo</div><div class="stat-value" id="s-ric">—</div></div>
       <div class="stat full"><div class="stat-label">Tot. bar + Riccardo</div><div class="stat-value" id="s-tot">—</div></div>
-      <div class="stat"><div class="stat-label">Tot. aggi</div><div class="stat-value" id="s-aggi">—</div></div>
+      <div class="stat full"><div class="stat-label">Tot. aggi (col. R)</div><div class="stat-value" id="s-aggi">—</div></div>
       <div class="stat full"><div class="stat-label">TOTALE INCASSO (bar + aggi + Riccardo)</div><div class="stat-value" id="s-totale">—</div></div>
     </div>
   </div>
@@ -404,7 +404,7 @@ function showPage(id,btn){
   if(id==='confronto'){document.getElementById('confronto-container').innerHTML='<div class="empty"><div class="empty-icon">📊</div><p>Clicca Carica per vedere i dati.</p></div>';}
   if(id==='anno'){document.getElementById('anno-container').innerHTML='<div class="empty"><div class="empty-icon">🏆</div><p>Clicca Carica per vedere i dati.</p></div>';}
   if(id==='aggi'){document.getElementById('aggi-riepilogo').innerHTML='<div class="card"><p style="color:#888;font-size:14px;text-align:center;padding:8px 0">Seleziona mese e clicca il pulsante ↻ per vedere il riepilogo.</p></div>';}
-  if(id==='spese')renderSpese();
+  if(id==='spese')caricaSpese();
 }
 
 // Init date
@@ -574,7 +574,23 @@ function caricaFatture(input){
 }
 
 // === SPESE MESE ===
-function renderSpese(){
+async function caricaSpese(){
+  const mese=parseInt(document.getElementById('sp-mese').value);
+  const anno=document.getElementById('sp-anno').value;
+  const cont=document.getElementById('spese-container');
+  cont.innerHTML='<div class="loading">⏳ Caricamento...</div>';
+  try{
+    const res=await jsonp({action:'leggiTutto',mese,anno});
+    // Usa il totale incasso direttamente dal foglio (colonna U)
+    const totIncassi=parseFloat(res.totIncasso)||0;
+    renderSpese(totIncassi, res);
+  }catch(e){
+    // Anche senza dati dal server, mostra almeno le spese fisse
+    renderSpese(0, {totCassa:0, totRic:0, totAggi:0, totIncasso:0});
+  }
+}
+
+function renderSpese(totIncassi=0, res={}){
   const mese=parseInt(document.getElementById('sp-mese').value);
   const sf=SPESE_FATTURE[mese+1]||{};
   const totF=Object.values(sf).reduce((a,b)=>a+b,0);
@@ -583,12 +599,27 @@ function renderSpese(){
   const totTot=totF+totFisse;
   const maxCat=Math.max(...Object.values(sf),1);
   const cont=document.getElementById('spese-container');
+  const utile=totIncassi-totTot;
+  const totCassa=parseFloat(res.totCassa)||0;
+  const totRic=parseFloat(res.totRic)||0;
+  const totAggi=parseFloat(res.totAggi)||0;
 
   let html=`<div class="card" style="padding:12px"><div class="stat-grid">
+    <div class="stat"><div class="stat-label">Cassa</div><div class="stat-value">${fmt(totCassa)}</div></div>
+    <div class="stat"><div class="stat-label">Riccardo</div><div class="stat-value">${fmt(totRic)}</div></div>
+    <div class="stat"><div class="stat-label">Aggi</div><div class="stat-value">${fmt(totAggi)}</div></div>
+    <div class="stat full"><div class="stat-label">TOT. INCASSO (cassa + Riccardo + aggi)</div><div class="stat-value">${fmt(totIncassi)}</div></div>
+  </div></div>
+  <div class="card" style="padding:12px"><div class="stat-grid">
     <div class="stat danger"><div class="stat-label">Fatture</div><div class="stat-value">${fmt(totF)}</div></div>
     <div class="stat warning"><div class="stat-label">Spese fisse</div><div class="stat-value">${fmt(totFisse)}</div></div>
-    <div class="stat danger full"><div class="stat-label">TOTALE SPESE ${MESI_NOMI[mese].toUpperCase()}</div><div class="stat-value">${fmt(totTot)}</div></div>
-  </div></div>`;
+    <div class="stat danger full"><div class="stat-label">TOTALE SPESE</div><div class="stat-value">${fmt(totTot)}</div></div>
+  </div></div>
+  <div class="card" style="padding:16px;border:2px solid ${utile>=0?'#3B6D11':'#A32D2D'}">
+    <div style="font-size:12px;font-weight:700;color:${utile>=0?'#3B6D11':'#A32D2D'};text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px">💰 Utile netto ${MESI_NOMI[mese]}</div>
+    <div style="font-size:30px;font-weight:800;color:${utile>=0?'#3B6D11':'#A32D2D'}">${utile>=0?'+':''}${fmt(utile)}</div>
+    <div style="font-size:12px;color:#888;margin-top:4px">${fmt(totIncassi)} incassi − ${fmt(totTot)} spese</div>
+  </div>`;
 
   if(Object.keys(sf).length>0){
     html+=`<div class="card"><div class="card-title">Fatture per categoria — ${MESI_NOMI[mese]}</div>`;
@@ -622,7 +653,7 @@ function renderSpese(){
   cont.innerHTML=html;
 }
 
-document.getElementById('sp-mese').addEventListener('change',renderSpese);
+document.getElementById('sp-mese').addEventListener('change',caricaSpese);
 
 // === CONFRONTO SPESE ===
 function renderConfronto(){
@@ -707,16 +738,16 @@ async function caricaMese(){
   try{
     const res=await jsonp({action:'leggiTutto',mese,anno});
     ultimoMeseDati=res.righe||[];
-    const a=res.aggi||{};
-    const totAggi=(parseFloat(a.lotto)||0)+(parseFloat(a.sir)||0)+(parseFloat(a.sisal)||0)+(parseFloat(a.aspan)||0)+(parseFloat(a.gratta)||0)+(parseFloat(a.macc)||0)+(parseFloat(a.tab)||0);
-    renderLista(ultimoMeseDati, totAggi);
+    const totAggi=parseFloat(res.totAggi)||0;   // colonna R dal foglio
+    const totIncasso=parseFloat(res.totIncasso)||0; // colonna U dal foglio
+    renderLista(ultimoMeseDati, totAggi, totIncasso);
   }
   catch(e){cont.innerHTML='<div class="empty"><div class="empty-icon">📡</div><p>Errore di connessione. Riprova.</p></div>';}
 }
 
-function renderLista(righe, totAggi=0){
+function renderLista(righe, totAggi=0, totIncasso=0){
   const cont=document.getElementById('lista-container');
-  if(righe.length===0){cont.innerHTML='<div class="empty"><div class="empty-icon">📭</div><p>Nessuna giornata inserita.</p></div>';['s-cassa','s-ric','s-tot'].forEach(id=>document.getElementById(id).textContent='€0,00');return;}
+  if(righe.length===0){cont.innerHTML='<div class="empty"><div class="empty-icon">📭</div><p>Nessuna giornata inserita.</p></div>';['s-cassa','s-ric','s-tot','s-aggi','s-totale'].forEach(id=>{const el=document.getElementById(id);if(el)el.textContent='€0,00';});return;}
   let totC=0,totR=0;
   righe.forEach(r=>{totC+=parseFloat(r.chiusura)||0;totR+=parseFloat(r.riccardo)||0;});
   document.getElementById('s-cassa').textContent=fmt(totC);
@@ -725,7 +756,7 @@ function renderLista(righe, totAggi=0){
   const elAggi=document.getElementById('s-aggi');
   const elTotale=document.getElementById('s-totale');
   if(elAggi)elAggi.textContent=fmt(totAggi);
-  if(elTotale)elTotale.textContent=fmt(totC+totR+totAggi);
+  if(elTotale)elTotale.textContent=fmt(totIncasso||totC+totR+totAggi);
   const sorted=[...righe].sort((a,b)=>b.data.localeCompare(a.data));
   cont.innerHTML=`<div class="entry-list">${sorted.map(r=>{
     const g=r.data?r.data.slice(8):'';
