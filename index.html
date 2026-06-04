@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="it">
 <head>
@@ -337,14 +338,14 @@ let ultimoMeseDati=[];
 function jsonp(params){
   return new Promise((resolve,reject)=>{
     const cb='cb_'+Date.now()+'_'+Math.random().toString(36).slice(2);
-    const to=setTimeout(()=>{delete window[cb];reject(new Error('Timeout'));},20000);
+    const to=setTimeout(()=>{delete window[cb];reject(new Error('Timeout'));},30000);
     window[cb]=d=>{clearTimeout(to);delete window[cb];resolve(d);};
     const qs=Object.entries({...params,callback:cb}).map(([k,v])=>encodeURIComponent(k)+'='+encodeURIComponent(String(v))).join('&');
     const s=document.createElement('script');
     s.src=SCRIPT_URL+'?'+qs;
     s.onerror=()=>{clearTimeout(to);delete window[cb];s.remove();reject(new Error('Errore'));};
     document.head.appendChild(s);
-    setTimeout(()=>{if(s.parentNode)s.remove();},21000);
+    setTimeout(()=>{if(s.parentNode)s.remove();},31000);
   });
 }
 
@@ -357,7 +358,7 @@ function showPage(id,btn){
   if(id==='settimane')caricaSettimane();
   if(id==='confronto')renderConfronto();
   if(id==='anno')caricaAnno();
-  if(id==='aggi')caricaAggiRiepilogo();
+  if(id==='aggi')setTimeout(caricaAggiRiepilogo, 300);
   if(id==='spese')renderSpese();
 }
 
