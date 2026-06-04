@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="it">
 <head>
@@ -159,20 +160,27 @@ function jsonp(params) {
     const cbName = 'cb_' + Date.now() + '_' + Math.random().toString(36).slice(2);
     const timeout = setTimeout(() => {
       delete window[cbName];
+      if(document.getElementById(cbName)) document.getElementById(cbName).remove();
       reject(new Error('Timeout'));
-    }, 15000);
+    }, 20000);
     window[cbName] = function(data) {
       clearTimeout(timeout);
       delete window[cbName];
       resolve(data);
     };
     const qs = Object.entries({...params, callback: cbName})
-      .map(([k,v]) => encodeURIComponent(k) + '=' + encodeURIComponent(v)).join('&');
+      .map(([k,v]) => encodeURIComponent(k) + '=' + encodeURIComponent(String(v))).join('&');
     const s = document.createElement('script');
+    s.id = cbName;
     s.src = SCRIPT_URL + '?' + qs;
-    s.onerror = () => { clearTimeout(timeout); delete window[cbName]; reject(new Error('Errore rete')); };
+    s.onerror = () => {
+      clearTimeout(timeout);
+      delete window[cbName];
+      s.remove();
+      reject(new Error('Errore rete'));
+    };
     document.head.appendChild(s);
-    setTimeout(() => { if(s.parentNode) s.parentNode.removeChild(s); }, 16000);
+    setTimeout(() => { if(s.parentNode) s.remove(); }, 21000);
   });
 }
 
