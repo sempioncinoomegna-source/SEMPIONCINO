@@ -161,8 +161,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <div class="field"><label>Giorno</label><input type="text" id="inp-giorno" readonly></div>
     </div>
     <div class="row2">
-      <div class="field"><label>Chiusura cassa (€)</label><input type="number" id="inp-chiusura" placeholder="0.00" step="0.01" min="0" inputmode="decimal"></div>
-      <div class="field"><label>Incasso Riccardo (€)</label><input type="number" id="inp-riccardo" placeholder="0.00" step="0.01" min="0" inputmode="decimal"></div>
+      <div class="field"><label>☕ Cassa bar (€)</label><input type="number" id="inp-chiusura" placeholder="0.00" step="0.01" min="0" inputmode="decimal"></div>
+      <div class="field"><label>👤 Riki (€)</label><input type="number" id="inp-riccardo" placeholder="0.00" step="0.01" min="0" inputmode="decimal"></div>
+    </div>
+    <div class="row2" id="row-pos-tab" style="display:none">
+      <div class="field"><label>💳 POS (€)</label><input type="number" id="inp-pos" placeholder="0.00" step="0.01" min="0" inputmode="decimal"></div>
+      <div class="field"><label>🚬 Tabacchi (€)</label><input type="number" id="inp-tabacchi" placeholder="0.00" step="0.01" min="0" inputmode="decimal"></div>
     </div>
     <div class="field"><label>Note</label><input type="text" id="inp-note" placeholder="es. apertura ridotta, scontrino sbagliato..."></div>
     <div class="check-row">
@@ -189,10 +193,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   </div>
   <div class="card" style="padding:12px">
     <div class="stat-grid">
-      <div class="stat"><div class="stat-label">Cassa</div><div class="stat-value" id="s-cassa">—</div></div>
-      <div class="stat"><div class="stat-label">Riccardo</div><div class="stat-value" id="s-ric">—</div></div>
-      <div class="stat full"><div class="stat-label">Tot. bar + Riccardo</div><div class="stat-value" id="s-tot">—</div></div>
-      <div class="stat full"><div class="stat-label">Tot. aggi (col. R)</div><div class="stat-value" id="s-aggi">—</div></div>
+      <div class="stat"><div class="stat-label">☕ Cassa</div><div class="stat-value" id="s-cassa">—</div></div>
+      <div class="stat"><div class="stat-label">👤 Riki</div><div class="stat-value" id="s-rik">—</div></div>
+      <div class="stat"><div class="stat-label">💳 POS</div><div class="stat-value" id="s-pos">—</div></div>
+      <div class="stat"><div class="stat-label">🚬 Tabacchi</div><div class="stat-value" id="s-tab">—</div></div>
+      <div class="stat"><div class="stat-label">🎰 Aggi</div><div class="stat-value" id="s-aggi">—</div></div>
       <div class="stat full"><div class="stat-label">TOTALE INCASSO (bar + aggi + Riccardo)</div><div class="stat-value" id="s-totale">—</div></div>
     </div>
   </div>
@@ -458,7 +463,9 @@ async function salva(){
   btn.disabled=true;btn.textContent='⏳ Salvataggio...';
   const d=new Date(data+'T12:00:00');
   try{
-    const res=await jsonp({action:'salvaRiga',mese:d.getMonth(),anno:d.getFullYear(),data,giorno:GIORNI[d.getDay()],chiusura:riposo?0:chiusura,riccardo:riposo?0:riccardo,note:document.getElementById('inp-note').value,riposo:riposo?'1':'0'});
+    const pos=parseFloat(document.getElementById('inp-pos')?document.getElementById('inp-pos').value:0)||0;
+    const tabacchi=parseFloat(document.getElementById('inp-tabacchi')?document.getElementById('inp-tabacchi').value:0)||0;
+    const res=await jsonp({action:'salvaRiga',mese:d.getMonth(),anno:d.getFullYear(),data,giorno:GIORNI[d.getDay()],chiusura:riposo?0:chiusura,riccardo:riposo?0:riccardo,pos:riposo?0:pos,tabacchi:riposo?0:tabacchi,note:document.getElementById('inp-note').value,riposo:riposo?'1':'0'});
     if(res.ok){
       mostraToast('✅ Salvato!','ok');
       ['inp-chiusura','inp-riccardo','inp-note'].forEach(id=>document.getElementById(id).value='');
@@ -608,7 +615,7 @@ function renderSpese(totIncassi=0, res={}){
 
   let html=`<div class="card" style="padding:12px"><div class="stat-grid">
     <div class="stat"><div class="stat-label">Cassa</div><div class="stat-value">${fmt(totCassa)}</div></div>
-    <div class="stat"><div class="stat-label">Riccardo</div><div class="stat-value">${fmt(totRic)}</div></div>
+    <div class="stat"><div class="stat-label">Riki</div><div class="stat-value">${fmt(totRic)}</div></div>
     <div class="stat"><div class="stat-label">Aggi</div><div class="stat-value">${fmt(totAggi)}</div></div>
     <div class="stat full"><div class="stat-label">TOT. INCASSO (cassa + Riccardo + aggi)</div><div class="stat-value">${fmt(totIncassi)}</div></div>
   </div></div>
@@ -736,39 +743,42 @@ async function caricaMese(){
   const mese=document.getElementById('sel-mese').value,anno=document.getElementById('sel-anno').value;
   const cont=document.getElementById('lista-container');
   cont.innerHTML='<div class="loading">⏳ Caricamento...</div>';
-  ['s-cassa','s-ric','s-tot','s-aggi','s-totale'].forEach(id=>{const el=document.getElementById(id);if(el)el.textContent='...';});
+  ['s-cassa','s-rik','s-tot','s-aggi','s-totale'].forEach(id=>{const el=document.getElementById(id);if(el)el.textContent='...';});
   try{
     const res=await jsonp({action:'leggiTutto',mese,anno});
     ultimoMeseDati=res.righe||[];
-    const totAggi=parseFloat(res.totAggi)||0;   // colonna R dal foglio
-    const totIncasso=parseFloat(res.totIncasso)||0; // colonna U dal foglio
-    renderLista(ultimoMeseDati, totAggi, totIncasso);
+    document.getElementById('s-cassa').textContent=fmt(res.totCassa||0);
+    document.getElementById('s-rik').textContent=fmt(res.totRik||0);
+    const elPos=document.getElementById('s-pos');if(elPos)elPos.textContent=fmt(res.totPos||0);
+    const elTab=document.getElementById('s-tab');if(elTab)elTab.textContent=fmt(res.totTab||0);
+    document.getElementById('s-aggi').textContent=fmt(res.totAggi||0);
+    document.getElementById('s-totale').textContent=fmt(res.totIncasso||0);
+    renderLista(ultimoMeseDati, parseInt(mese));
   }
   catch(e){cont.innerHTML='<div class="empty"><div class="empty-icon">📡</div><p>Errore di connessione. Riprova.</p></div>';}
 }
 
-function renderLista(righe, totAggi=0, totIncasso=0){
+function renderLista(righe, mese=0){
   const cont=document.getElementById('lista-container');
-  if(righe.length===0){cont.innerHTML='<div class="empty"><div class="empty-icon">📭</div><p>Nessuna giornata inserita.</p></div>';['s-cassa','s-ric','s-tot','s-aggi','s-totale'].forEach(id=>{const el=document.getElementById(id);if(el)el.textContent='€0,00';});return;}
-  let totC=0,totR=0;
-  righe.forEach(r=>{totC+=parseFloat(r.chiusura)||0;totR+=parseFloat(r.riccardo)||0;});
-  document.getElementById('s-cassa').textContent=fmt(totC);
-  document.getElementById('s-ric').textContent=fmt(totR);
-  document.getElementById('s-tot').textContent=fmt(totC+totR);
-  const elAggi=document.getElementById('s-aggi');
-  const elTotale=document.getElementById('s-totale');
-  if(elAggi)elAggi.textContent=fmt(totAggi);
-  if(elTotale)elTotale.textContent=fmt(totIncasso||totC+totR+totAggi);
+  if(righe.length===0){cont.innerHTML='<div class="empty"><div class="empty-icon">📭</div><p>Nessuna giornata inserita.</p></div>';return;}
+  const hasPT=mese>=4;
   const sorted=[...righe].sort((a,b)=>b.data.localeCompare(a.data));
   cont.innerHTML=`<div class="entry-list">${sorted.map(r=>{
     const g=r.data?r.data.slice(8):'';
     const nota=r.note==='RIPOSO'?'<span class="entry-riposo">RIPOSO</span>':r.note?`<span class="entry-note">${r.note}</span>`:'';
-    const c=parseFloat(r.chiusura)||0,rc=parseFloat(r.riccardo)||0;
-    const amounts=r.note==='RIPOSO'?'':`<div class="entry-amounts"><div class="entry-chip"><span>Cassa </span>${fmt(c)}</div>${rc>0?`<div class="entry-chip"><span>Riccardo </span>${fmt(rc)}</div>`:''}</div>`;
+    const c=parseFloat(r.chiusura)||0;
+    const rk=parseFloat(r.riccardo)||0;
+    const ps=parseFloat(r.pos)||0;
+    const tb=parseFloat(r.tabacchi)||0;
+    const amounts=r.note==='RIPOSO'?'':`<div class="entry-amounts">
+      <div class="entry-chip"><span>Cassa </span>${fmt(c)}</div>
+      ${rk>0?`<div class="entry-chip"><span>Riki </span>${fmt(rk)}</div>`:''}
+      ${hasPT&&ps>0?`<div class="entry-chip"><span>POS </span>${fmt(ps)}</div>`:''}
+      ${hasPT&&tb>0?`<div class="entry-chip"><span>Tab. </span>${fmt(tb)}</div>`:''}
+    </div>`;
     const dObj=new Date(r.data+'T12:00:00');
     return `<div class="entry"><div class="entry-date">${g}</div><div class="entry-info"><div class="entry-day">${r.giorno||''}</div>${amounts}${nota}</div><button class="del-btn" onclick="elimina('${r.data}',${dObj.getMonth()},${dObj.getFullYear()})">🗑</button></div>`;
   }).join('')}</div>`;
-}
 
 async function elimina(data,mese,anno){
   if(!confirm('Eliminare la giornata del '+data+'?'))return;
@@ -815,13 +825,13 @@ function generaPDF(){
     <div class="box green"><div class="bl">Chiusure cassa</div><div class="bv">${fmt(totC)}</div></div>
     <div class="box green"><div class="bl">Imponibile 10%</div><div class="bv">${fmt(impo)}</div></div>
     <div class="box green"><div class="bl">IVA 10%</div><div class="bv">${fmt(iva)}</div></div>
-    <div class="box green"><div class="bl">Riccardo</div><div class="bv">${fmt(totR)}</div></div>
+    <div class="box green"><div class="bl">Riki</div><div class="bv">${fmt(totR)}</div></div>
     <div class="box tgreen"><div class="bl">Tot. incassi</div><div class="bv">${fmt(totC+totR)}</div></div>
     <div class="box red"><div class="bl">Tot. spese</div><div class="bv">${fmt(totSpese)}</div></div>
     <div class="box utile"><div class="bl">UTILE NETTO</div><div class="bv">${utile>=0?'+':''}${fmt(utile)}</div></div>
   </div>
   <h3>Dettaglio giornaliero</h3>
-  <table><thead><tr><th>Giorno</th><th>Giorno sett.</th><th>Chiusura cassa</th><th>Riccardo</th><th>Note</th></tr></thead><tbody>${righeHTML}</tbody></table>
+  <table><thead><tr><th>Giorno</th><th>Giorno sett.</th><th>Chiusura cassa</th><th>Riki</th><th>Note</th></tr></thead><tbody>${righeHTML}</tbody></table>
   <h3>Dettaglio spese</h3>
   <table><thead><tr><th>Voce</th><th style="text-align:right">Importo</th></tr></thead><tbody>${speseHTML}
   <tr style="font-weight:700;background:#f9f9f9"><td>TOTALE SPESE</td><td style="text-align:right;color:#E24B4A">-${fmt(totSpese)}</td></tr>
