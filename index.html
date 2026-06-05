@@ -452,9 +452,20 @@ function caricaBanca(input){
         let dataVal=row[idxData];
         let data=null;
         if(typeof dataVal==='number'){
-          data=new Date(Math.round((dataVal-25569)*86400*1000));
+          // Excel serial date - use UTC to avoid timezone issues
+          const ms=Math.round((dataVal-25569)*86400*1000);
+          data=new Date(ms);
+          // Normalize to midnight local time
+          data=new Date(data.getUTCFullYear(),data.getUTCMonth(),data.getUTCDate());
         }else if(dataVal){
-          data=new Date(dataVal);
+          const s=String(dataVal);
+          // Handle YYYY-MM-DD format
+          if(s.match(/^\d{4}-\d{2}-\d{2}/)){
+            const parts=s.slice(0,10).split('-');
+            data=new Date(parseInt(parts[0]),parseInt(parts[1])-1,parseInt(parts[2]));
+          }else{
+            data=new Date(dataVal);
+          }
         }
         if(!data||isNaN(data.getTime()))continue;
         const op=String(row[idxOp]||'');
@@ -471,7 +482,12 @@ function caricaBanca(input){
       const dates=tuttiBancaMovimenti.map(m=>m.data).sort((a,b)=>a-b);
       const minDate=dates[0];
       const maxDate=dates[dates.length-1];
-      const fmtDate=d=>d.toISOString().slice(0,10);
+      const fmtDate=d=>{
+        const y=d.getFullYear();
+        const m=String(d.getMonth()+1).padStart(2,'0');
+        const g=String(d.getDate()).padStart(2,'0');
+        return y+'-'+m+'-'+g;
+      };
       document.getElementById('banca-dal').value=fmtDate(minDate);
       document.getElementById('banca-al').value=fmtDate(maxDate);
       document.getElementById('banca-filtri').style.display='block';
