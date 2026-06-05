@@ -770,15 +770,11 @@ function renderLista(righe, mese=0){
     const rk=parseFloat(r.riccardo)||0;
     const ps=parseFloat(r.pos)||0;
     const tb=parseFloat(r.tabacchi)||0;
-    const amounts=r.note==='RIPOSO'?'':`<div class="entry-amounts">
-      <div class="entry-chip"><span>Cassa </span>${fmt(c)}</div>
-      ${rk>0?`<div class="entry-chip"><span>Riki </span>${fmt(rk)}</div>`:''}
-      ${hasPT&&ps>0?`<div class="entry-chip"><span>POS </span>${fmt(ps)}</div>`:''}
-      ${hasPT&&tb>0?`<div class="entry-chip"><span>Tab. </span>${fmt(tb)}</div>`:''}
-    </div>`;
+    const amounts=r.note==='RIPOSO'?'':`<div class="entry-amounts"><div class="entry-chip"><span>Cassa </span>${fmt(c)}</div>${rk>0?`<div class="entry-chip"><span>Riki </span>${fmt(rk)}</div>`:''}${hasPT&&ps>0?`<div class="entry-chip"><span>POS </span>${fmt(ps)}</div>`:''}${hasPT&&tb>0?`<div class="entry-chip"><span>Tab. </span>${fmt(tb)}</div>`:''}</div>`;
     const dObj=new Date(r.data+'T12:00:00');
     return `<div class="entry"><div class="entry-date">${g}</div><div class="entry-info"><div class="entry-day">${r.giorno||''}</div>${amounts}${nota}</div><button class="del-btn" onclick="elimina('${r.data}',${dObj.getMonth()},${dObj.getFullYear()})">🗑</button></div>`;
   }).join('')}</div>`;
+}
 
 async function elimina(data,mese,anno){
   if(!confirm('Eliminare la giornata del '+data+'?'))return;
