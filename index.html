@@ -123,6 +123,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   <button class="tab" onclick="showPage('confronto',this)"><span class="tab-icon">⚖️</span>Confronto</button>
   <button class="tab" onclick="showPage('settimane',this)"><span class="tab-icon">📅</span>Settimane</button>
   <button class="tab" onclick="showPage('anno',this)"><span class="tab-icon">🏆</span>Anno</button>
+  <button class="tab" onclick="showPage('banca',this)"><span class="tab-icon">🏦</span>Banca</button>
 </div>
 
 <!-- INSERISCI -->
@@ -315,6 +316,30 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   <div id="anno-container"><div class="empty"><div class="empty-icon">🏆</div><p>Clicca Carica per vedere i dati</p></div></div>
 </div>
 
+<!-- BANCA -->
+<div class="page" id="page-banca">
+  <div class="mese-bar">
+    <select id="banca-mese">
+      <option value="0">Gennaio</option><option value="1">Febbraio</option><option value="2">Marzo</option>
+      <option value="3">Aprile</option><option value="4">Maggio</option><option value="5" selected>Giugno</option>
+      <option value="6">Luglio</option><option value="7">Agosto</option><option value="8">Settembre</option>
+      <option value="9">Ottobre</option><option value="10">Novembre</option><option value="11">Dicembre</option>
+    </select>
+    <select id="banca-anno">
+      <option value="2025">2025</option><option value="2026" selected>2026</option><option value="2027">2027</option>
+    </select>
+  </div>
+  <div class="card" style="padding:12px;margin-bottom:8px">
+    <label style="display:block;font-size:13px;font-weight:600;color:#8B6914;margin-bottom:8px">🏦 Carica estratto conto Excel</label>
+    <div style="border:2px dashed var(--beige-light);border-radius:10px;padding:16px;text-align:center;cursor:pointer" onclick="document.getElementById('file-banca').click()">
+      <input type="file" id="file-banca" accept=".xlsx,.xls" onchange="caricaBanca(this)" style="display:none">
+      <div style="font-size:28px;margin-bottom:6px">📂</div>
+      <div style="font-size:13px;color:#888">Clicca per caricare l'Excel della banca</div>
+    </div>
+  </div>
+  <div id="banca-container"><div class="empty"><div class="empty-icon">🏦</div><p>Carica l'estratto conto per vedere i movimenti</p></div></div>
+</div>
+
 <div class="toast" id="toast"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
@@ -344,6 +369,177 @@ let SPESE_FATTURE={
 };
 let ultimoMeseDati=[];
 let confViewAttivo='anno';
+
+function catBanca(op){
+  const u=String(op).toUpperCase();
+  if(u.includes('POS BAR')||u.includes('ACCREDITO AL LORDO'))return 'Entrate POS';
+  if(u.includes('VERSAMENTO CONTANTI'))return 'Versamenti contanti';
+  if(u.includes('BRIGHTSTAR')||u.includes('EURO SLOT'))return 'Aggi macchinette';
+  if(u.includes('LOGISTA ITALIA'))return 'Tabacchi (Logista)';
+  if(u.includes('LIS PAY')||u.includes('LIS HOLDING'))return 'Giochi (LIS)';
+  if(u.includes('SISAL'))return u.includes('BONIFICO DISPOSTO DA')?'Aggi (Sisal)':'Giochi (Sisal)';
+  if(u.includes('LOTTERIE')||u.includes('BRIGHTSTAR'))return 'Aggi lotto';
+  if(u.includes('COMMISSIONI TRANSATO')||u.includes('CANONE SPESE POS'))return 'Commissioni POS';
+  if(u.includes('COMMISSIONE PAGAMENTO')||u.includes('PAGAMENTO ADUE'))return 'Pagamenti fornitori';
+  if(u.includes('IDEALGEL'))return 'Surgelati/Gelati';
+  if(u.includes('GRANDI FRATELLI'))return 'Bar (forniture)';
+  if(u.includes('PARMALAT'))return 'Latte';
+  if(u.includes('CAFFE')||u.includes('COMERO'))return 'Caffè';
+  if(u.includes('FASTWEB'))return 'Telefonia';
+  if(u.includes('ENERGIA')||u.includes('ACQUA'))return 'Utenze';
+  if(u.includes('ITAGENCY')||u.includes('UBIFY')||u.includes('LASERVIDEO'))return 'Macchinette/Tech';
+  if(u.includes('AFFITTO')||u.includes('LOCAZIONE'))return 'Affitto';
+  if(u.includes('F24')||u.includes('INPS')||u.includes('AGENZIA ENTRATE'))return 'Tasse/Contributi';
+  if(u.includes('STIPENDIO')||u.includes('MENDICINO')||u.includes('SANDRO')||u.includes('MORRIS'))return 'Personale';
+  if(u.includes('BONIFICO DISPOSTO A'))return 'Bonifici uscita';
+  if(u.includes('BONIFICO DISPOSTO DA'))return 'Bonifici entrata';
+  return null;
+}
+
+const CAT_BANCA_COLORI={
+  'Entrate POS':'#1D9E75',
+  'Versamenti contanti':'#378ADD',
+  'Aggi macchinette':'#5DCAA5',
+  'Aggi (Sisal)':'#85B7EB',
+  'Tabacchi (Logista)':'#E24B4A',
+  'Giochi (LIS)':'#D4537E',
+  'Giochi (Sisal)':'#F0997B',
+  'Commissioni POS':'#888780',
+  'Pagamenti fornitori':'#BA7517',
+  'Surgelati/Gelati':'#5DCAA5',
+  'Bar (forniture)':'#1D9E75',
+  'Latte':'#85B7EB',
+  'Caffè':'#BA7517',
+  'Telefonia':'#639922',
+  'Utenze':'#7F77DD',
+  'Macchinette/Tech':'#D4537E',
+  'Affitto':'#E24B4A',
+  'Tasse/Contributi':'#791F1F',
+  'Personale':'#A32D2D',
+  'Bonifici uscita':'#888',
+  'Bonifici entrata':'#3B6D11'
+};
+
+function caricaBanca(input){
+  const file=input.files[0];if(!file)return;
+  const reader=new FileReader();
+  reader.onload=function(e){
+    try{
+      const wb=XLSX.read(e.target.result,{type:'binary'});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      const raw=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+      
+      // Find header row
+      let headerIdx=-1;
+      for(let i=0;i<raw.length;i++){
+        if(raw[i].includes('Data')&&raw[i].includes('Operazione')&&raw[i].includes('Importo')){
+          headerIdx=i;break;
+        }
+      }
+      if(headerIdx<0){mostraToast('❌ Formato non riconosciuto','err');return;}
+      
+      const headers=raw[headerIdx];
+      const idxData=headers.indexOf('Data');
+      const idxOp=headers.indexOf('Operazione');
+      const idxImporto=headers.indexOf('Importo');
+      
+      const mese=parseInt(document.getElementById('banca-mese').value)+1;
+      const anno=parseInt(document.getElementById('banca-anno').value);
+      
+      const movimenti=[];
+      for(let i=headerIdx+1;i<raw.length;i++){
+        const row=raw[i];
+        const importo=parseFloat(String(row[idxImporto]).replace(',','.'));
+        if(isNaN(importo))continue;
+        
+        // Parse date
+        let dataVal=row[idxData];
+        let data=null;
+        if(typeof dataVal==='number'){
+          data=new Date(Math.round((dataVal-25569)*86400*1000));
+        }else if(dataVal){
+          data=new Date(dataVal);
+        }
+        if(!data||isNaN(data.getTime()))continue;
+        if(data.getMonth()+1!==mese||data.getFullYear()!==anno)continue;
+        
+        const op=String(row[idxOp]||'');
+        const cat=catBanca(op)||'Altro';
+        movimenti.push({data,op,importo,cat});
+      }
+      
+      if(movimenti.length===0){
+        mostraToast('❌ Nessun movimento trovato per '+MESI_NOMI[mese-1]+' '+anno,'err');
+        input.value='';return;
+      }
+      
+      mostraToast('✅ Caricate '+movimenti.length+' operazioni','ok');
+      renderBanca(movimenti, mese-1, anno);
+    }catch(err){
+      console.error(err);
+      mostraToast('❌ Errore lettura file','err');
+    }
+    input.value='';
+  };
+  reader.readAsBinaryString(file);
+}
+
+function renderBanca(movimenti, mese, anno){
+  const cont=document.getElementById('banca-container');
+  const totEntrate=movimenti.filter(m=>m.importo>0).reduce((s,m)=>s+m.importo,0);
+  const totUscite=movimenti.filter(m=>m.importo<0).reduce((s,m)=>s+m.importo,0);
+  const saldo=totEntrate+totUscite;
+  
+  // Group by category
+  const cats={};
+  movimenti.forEach(m=>{
+    if(!cats[m.cat])cats[m.cat]={tot:0,n:0,tipo:m.importo>0?'E':'U'};
+    cats[m.cat].tot+=m.importo;
+    cats[m.cat].n++;
+    if(m.importo>0)cats[m.cat].tipo='E';
+  });
+  
+  const entrate=Object.entries(cats).filter(([,v])=>v.tot>0).sort((a,b)=>b[1].tot-a[1].tot);
+  const uscite=Object.entries(cats).filter(([,v])=>v.tot<0).sort((a,b)=>a[1].tot-b[1].tot);
+  
+  let html='<div class="card" style="padding:12px"><div class="stat-grid">';
+  html+='<div class="stat positive"><div class="stat-label">Entrate</div><div class="stat-value">'+fmt(totEntrate)+'</div></div>';
+  html+='<div class="stat danger"><div class="stat-label">Uscite</div><div class="stat-value">'+fmt(Math.abs(totUscite))+'</div></div>';
+  html+='<div class="stat '+(saldo>=0?'positive':'danger')+' full"><div class="stat-label">SALDO BANCARIO '+MESI_NOMI[mese].toUpperCase()+' '+anno+'</div><div class="stat-value">'+(saldo>=0?'+':'')+fmt(saldo)+'</div></div>';
+  html+='</div></div>';
+  
+  // Entrate per categoria
+  html+='<div class="card"><div class="card-title">📈 Entrate per centro di costo</div>';
+  const maxE=Math.max(...entrate.map(([,v])=>v.tot),1);
+  entrate.forEach(([cat,v])=>{
+    const pct=Math.round((v.tot/maxE)*100);
+    const col=CAT_BANCA_COLORI[cat]||'#1D9E75';
+    html+='<div style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;margin-bottom:3px"><span style="font-size:13px;color:#444">'+cat+'<span style="color:#888;font-size:11px"> ('+v.n+' mov.)</span></span><span style="color:#3B6D11;font-weight:700">'+fmt(v.tot)+'</span></div><div class="bar-bg"><div class="bar-fill" style="width:'+pct+'%;background:'+col+'"></div></div></div>';
+  });
+  html+='</div>';
+  
+  // Uscite per categoria
+  html+='<div class="card"><div class="card-title">📉 Uscite per centro di costo</div>';
+  const maxU=Math.max(...uscite.map(([,v])=>Math.abs(v.tot)),1);
+  uscite.forEach(([cat,v])=>{
+    const pct=Math.round((Math.abs(v.tot)/maxU)*100);
+    const col=CAT_BANCA_COLORI[cat]||'#E24B4A';
+    html+='<div style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;margin-bottom:3px"><span style="font-size:13px;color:#444">'+cat+'<span style="color:#888;font-size:11px"> ('+v.n+' mov.)</span></span><span style="color:#E24B4A;font-weight:700">'+fmt(Math.abs(v.tot))+'</span></div><div class="bar-bg"><div class="bar-fill" style="width:'+pct+'%;background:'+col+'"></div></div></div>';
+  });
+  html+='</div>';
+  
+  // Lista movimenti
+  html+='<div class="card"><div class="card-title">Tutti i movimenti</div>';
+  const sorted=[...movimenti].sort((a,b)=>b.data-a.data);
+  sorted.forEach(m=>{
+    const col=m.importo>0?'#3B6D11':'#E24B4A';
+    const catCol=CAT_BANCA_COLORI[m.cat]||'#888';
+    html+='<div style="padding:8px 0;border-bottom:1px solid #f5f5f5"><div style="display:flex;justify-content:space-between;align-items:flex-start"><div style="flex:1"><div style="font-size:12px;color:#888">'+(m.data.getDate())+' '+MESI_NOMI[mese]+'</div><div style="font-size:13px;color:#444;margin:2px 0">'+m.op.slice(0,60)+(m.op.length>60?'...':'')+'</div><span style="font-size:10px;background:'+catCol+'22;color:'+catCol+';padding:1px 6px;border-radius:10px;font-weight:600">'+m.cat+'</span></div><div style="font-size:14px;font-weight:700;color:'+col+';margin-left:10px;white-space:nowrap">'+(m.importo>0?'+':'')+fmt(m.importo)+'</div></div></div>';
+  });
+  html+='</div>';
+  
+  cont.innerHTML=html;
+}
 
 function fmt(n){return '€'+parseFloat(n||0).toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2});}
 function totSpeseMese(mese){const sf=SPESE_FATTURE[mese+1]||{};return Object.values(sf).reduce((a,b)=>a+b,0)+TOT_FISSE+(MESI_TRIM.includes(mese)?TOT_TRIM:0);}
@@ -377,6 +573,7 @@ function showPage(id,btn){
   if(id==='settimane')caricaSettimane();
   if(id==='spese'){renderSpeseFisse(parseInt(document.getElementById('sp-mese').value));mostraBottoneUtile();}
   if(id==='aggi')document.getElementById('aggi-riepilogo').innerHTML='<div class="card"><p style="color:#888;font-size:14px;text-align:center;padding:8px">Clicca ↻ per caricare il riepilogo aggi</p></div>';
+  if(id==='banca')document.getElementById('banca-container').innerHTML='<div class="empty"><div class="empty-icon">🏦</div><p>Carica l\'estratto conto per vedere i movimenti</p></div>';
 }
 
 // INIT
