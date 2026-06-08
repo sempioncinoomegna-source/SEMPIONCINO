@@ -537,23 +537,35 @@ function caricaBanca(input){
 }
 
 async function salvaBancaSheet(movimenti){
-  // Save in batches of 200
-  const batch=200;
   const dates=movimenti.map(m=>m.data).sort((a,b)=>a-b);
   const dal=dates[0].toISOString().slice(0,10);
   const al=dates[dates.length-1].toISOString().slice(0,10);
   const payload=movimenti.map(m=>({
     data:m.data.toISOString().slice(0,10),
-    op:m.op.slice(0,200),
+    op:m.op.slice(0,150),
     cat:m.cat,
     tipo:m.importo>0?'ENTRATA':'USCITA',
     importo:m.importo
   }));
+  // Save in batches of 50 to avoid URL length limits
+  const batchSize=50;
+  const total=payload.length;
+  let saved=0;
+  mostraToast('⏳ Salvataggio in corso...','ok');
   try{
-    const res=await jsonp({action:'salvaBanca',dal,al,movimenti:JSON.stringify(payload)});
-    if(res.ok)mostraToast('✅ '+res.n+' movimenti salvati su Google Sheet!','ok');
+    // First clear the period
+    await jsonp({action:'salvaBanca',dal,al,movimenti:JSON.stringify([]),clear:'1'});
+    // Then save in batches
+    for(let i=0;i<payload.length;i+=batchSize){
+      const batch=payload.slice(i,i+batchSize);
+      const res=await jsonp({action:'salvaBanca',dal,al,movimenti:JSON.stringify(batch),clear:'0'});
+      if(res.ok)saved+=batch.length;
+    }
+    mostraToast('✅ '+saved+' movimenti salvati su Google Sheet!','ok');
+    // Update file info
+    document.getElementById('banca-file-info').textContent=total+' movimenti salvati sul cloud ('+new Date(dal+'T12:00:00').toLocaleDateString('it-IT')+' — '+new Date(al+'T12:00:00').toLocaleDateString('it-IT')+')';
   }catch(e){
-    mostraToast('⚠️ Dati visibili ma non salvati sul cloud','err');
+    mostraToast('⚠️ Errore salvataggio sul cloud','err');
   }
 }
 
