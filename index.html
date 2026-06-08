@@ -318,23 +318,23 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 
 <!-- BANCA -->
 <div class="page" id="page-banca">
-  <div class="card" style="padding:12px;margin-bottom:8px">
-    <label style="display:block;font-size:13px;font-weight:600;color:#8B6914;margin-bottom:8px">🏦 Carica estratto conto Excel (anche più mesi)</label>
-    <div style="border:2px dashed var(--beige-light);border-radius:10px;padding:16px;text-align:center;cursor:pointer" onclick="document.getElementById('file-banca').click()">
-      <input type="file" id="file-banca" accept=".xlsx,.xls" onchange="caricaBanca(this)" style="display:none">
-      <div style="font-size:28px;margin-bottom:6px">📂</div>
-      <div style="font-size:13px;color:#888">Clicca per caricare il file Excel</div>
-      <div style="font-size:11px;color:#aaa;margin-top:4px" id="banca-file-info"></div>
-    </div>
-  </div>
-  <div id="banca-filtri" style="display:none">
+  <div id="banca-filtri">
     <div class="card" style="padding:12px">
-      <div class="card-title">Seleziona periodo</div>
+      <div style="font-size:11px;font-weight:700;color:#8B6914;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">Seleziona periodo</div>
+      <div style="font-size:11px;color:#aaa;margin-bottom:8px" id="banca-file-info"></div>
       <div class="row2">
         <div class="field"><label>Dal</label><input type="date" id="banca-dal"></div>
         <div class="field"><label>Al</label><input type="date" id="banca-al"></div>
       </div>
       <button class="btn-save" onclick="filtraBanca()">📊 Mostra periodo</button>
+      <div style="display:flex;gap:8px;margin-top:10px;align-items:center">
+        <div style="position:relative;flex:1">
+          <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:15px;color:#aaa">🔍</span>
+          <input type="text" id="banca-search" placeholder="Cerca tra i movimenti..." oninput="cercaBanca(this.value)" style="width:100%;padding:10px 12px 10px 36px;border:1.5px solid #e8e8e8;border-radius:10px;font-size:14px">
+        </div>
+        <button onclick="document.getElementById('banca-search').value='';cercaBanca('')" style="padding:10px;background:var(--beige-pale);border:1.5px solid var(--beige);border-radius:10px;cursor:pointer;font-size:14px;color:var(--nero)">✕</button>
+      </div>
+      <input type="file" id="file-banca" accept=".xlsx,.xls" onchange="caricaBanca(this)" style="display:none">
     </div>
   </div>
   <div id="banca-container"><div class="empty"><div class="empty-icon">🏦</div><p>Carica l'estratto conto per vedere i movimenti</p></div></div>
@@ -569,6 +569,31 @@ async function salvaBancaSheet(movimenti){
   }
 }
 
+let bancaFiltrati=[];
+
+function cercaBanca(query){
+  const q=query.toLowerCase().trim();
+  if(!q){
+    // Mostra tutti i movimenti del periodo corrente
+    renderBanca(bancaFiltrati, document.getElementById('banca-dal').value+' → '+document.getElementById('banca-al').value);
+    return;
+  }
+  const risultati=bancaFiltrati.filter(m=>
+    m.op.toLowerCase().includes(q)||
+    m.cat.toLowerCase().includes(q)||
+    m.tipo.toLowerCase().includes(q)
+  );
+  const cont=document.getElementById('banca-container');
+  if(risultati.length===0){
+    cont.innerHTML='<div class="empty"><div class="empty-icon">🔍</div><p>Nessun movimento trovato per "'+query+'"</p></div>';
+    return;
+  }
+  const tot=risultati.reduce((s,m)=>s+m.importo,0);
+  const e=risultati.filter(m=>m.importo>0).reduce((s,m)=>s+m.importo,0);
+  const u=risultati.filter(m=>m.importo<0).reduce((s,m)=>s+m.importo,0);
+  renderBanca(risultati, 'Ricerca: "'+query+'" — '+risultati.length+' risultati');
+}
+
 function filtraBanca(){
   const dal=new Date(document.getElementById('banca-dal').value+'T00:00:00');
   const al=new Date(document.getElementById('banca-al').value+'T23:59:59');
@@ -579,7 +604,11 @@ function filtraBanca(){
     return;
   }
   const label=dal.toLocaleDateString('it-IT')+' → '+al.toLocaleDateString('it-IT');
+  bancaFiltrati=filtrati;
   renderBanca(filtrati, label);
+  // Reset search
+  const s=document.getElementById('banca-search');
+  if(s)s.value='';
 }
 
 function renderBanca(movimenti, label){
