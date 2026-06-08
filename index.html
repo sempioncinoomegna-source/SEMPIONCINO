@@ -365,6 +365,10 @@ const SPESE_FISSE=[
 const TOT_FISSE=SPESE_FISSE.reduce((a,b)=>a+b.importo,0);
 const SPESE_TRIM_VOCI=[{nome:'TFR Stefania',icona:'💼',importo:500},{nome:'Contributi Sandro + Morris',icona:'👥',importo:2000}];
 const TOT_TRIM=SPESE_TRIM_VOCI.reduce((a,b)=>a+b.importo,0);
+// Entrate straordinarie per mese (indice mese+1)
+const ENTRATE_STRAORD={
+  4: [{nome:'Finanziamento distributore sigarette',icona:'🏦',importo:12740}]
+};
 const CAT_COLORS={'Tabacchi':'#E24B4A','Giochi':'#378ADD','Caffè':'#BA7517','Bar (forniture)':'#1D9E75','Latte':'#85B7EB','Surgelati/Gelati':'#5DCAA5','Alimentari/Bevande':'#EF9F27','Snack/Dolciumi':'#F0997B','Utenze':'#7F77DD','Macchinette/Tech':'#D4537E','Manutenzione':'#888780','Telefonia':'#639922','Commissioni POS':'#D85A30','Varie':'#B4B2A9'};
 let SPESE_FATTURE={
   3:{'Tabacchi (trasporto/fornitura)':804.76,'Caffè':800.29,'Bar (forniture)':1278.80,'Latte':155.90,'Surgelati/Gelati':1888.32,'Alimentari/Bevande':322.88,'Snack/Dolciumi':360.67,'Utenze':736.00,'Macchinette/Tech':98.47,'Manutenzione':366.00},
@@ -890,7 +894,10 @@ async function caricaSpese(){
     const sf=SPESE_FATTURE[mese+1]||{};
     const totF=Object.values(sf).reduce((a,b)=>a+b,0);
     const isTrim=MESI_TRIM.includes(mese);
-    const totSpese=totF+TOT_FISSE+(isTrim?TOT_TRIM:0);
+    const totFisse=TOT_FISSE+(isTrim?TOT_TRIM:0);
+    const entStr=ENTRATE_STRAORD[mese+1]||[];
+    const totEntStr=entStr.reduce((a,b)=>a+b.importo,0);
+    const totSpese=totF+totFisse-totEntStr;
     const utile=totIncassi-totSpese;
     const hasPT=mese>=MESE_INIZIO_POS;
     let html='<div class="card" style="padding:12px"><div class="stat-grid">';
@@ -907,7 +914,8 @@ async function caricaSpese(){
     html+='<div class="card" style="padding:16px;border:2px solid '+col+'">';
     html+='<div style="font-size:11px;font-weight:700;color:'+col+';text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px">💰 Utile netto '+MESI_NOMI[mese]+'</div>';
     html+='<div style="font-size:28px;font-weight:800;color:'+col+'">'+(utile>=0?'+':'')+fmt(utile)+'</div>';
-    html+='<div style="font-size:12px;color:#888;margin-top:4px">'+fmt(totIncassi)+' incassi − '+fmt(totSpese)+' spese</div>';
+    html+='<div style="font-size:12px;color:#888;margin-top:4px">'+fmt(totIncassi)+' incassi − '+fmt(totSpese)+' spese nette</div>';
+    if(totEntStr>0){html+='<div style="font-size:11px;color:#3B6D11;margin-top:4px">✅ Include finanziamento +'+fmt(totEntStr)+' dedotto dalle spese</div>';}
     html+='</div>';
     contU.innerHTML=html;
   }catch(e){
@@ -941,6 +949,13 @@ function renderSpeseFisse(mese){
     SPESE_TRIM_VOCI.forEach(s=>{html+='<div class="spesa-row"><span>'+s.icona+' '+s.nome+'</span><span style="color:#888;font-weight:700">'+fmt(s.importo)+'</span></div>';});
   }
   html+='<div class="spesa-row" style="font-weight:700"><span>Tot. spese fisse</span><span style="color:#E24B4A">'+fmt(totFisse)+'</span></div></div>';
+  // Entrate straordinarie
+  const entStr=ENTRATE_STRAORD[mese+1]||[];
+  if(entStr.length>0){
+    html+='<div class="card"><div class="card-title">Entrate straordinarie</div>';
+    entStr.forEach(s=>{html+='<div class="spesa-row"><span>'+s.icona+' '+s.nome+'</span><span style="color:#3B6D11;font-weight:700">+'+fmt(s.importo)+'</span></div>';});
+    html+='<div class="spesa-row" style="font-weight:700"><span>Tot. entrate straord.</span><span style="color:#3B6D11">+'+fmt(entStr.reduce((a,b)=>a+b.importo,0))+'</span></div></div>';
+  }
   cont.innerHTML=html;
 }
 
@@ -1165,11 +1180,11 @@ function renderSpeseCategoria(){
 async function caricaAnno(){
   const anno=document.getElementById('anno-sel').value;
   const cont=document.getElementById('anno-container');
-  cont.innerHTML='<div class="loading">⏳ Caricamento anno '+anno+'...</div>';
   const results=[];
   for(let i=0;i<12;i++){
+    cont.innerHTML='<div class="loading">⏳ Caricamento '+MESI_NOMI[i]+'... ('+(i+1)+'/12)</div>';
     try{const res=await jsonp({action:'leggiTutto',mese:i,anno});results.push({mese:i,...res});}
-    catch(e){results.push({mese:i,totIncasso:0});}
+    catch(e){results.push({mese:i,totIncasso:0,totCassa:0,totRik:0,totAggi:0});}
   }
   const conDati=results.filter(m=>(m.totIncasso||0)>0);
   const totAnno=results.reduce((s,m)=>s+(m.totIncasso||0),0);
