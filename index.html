@@ -319,21 +319,26 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 <!-- BANCA -->
 <div class="page" id="page-banca">
   <div id="banca-filtri">
+    <!-- Ricerca libera -->
+    <div class="card" style="padding:12px;margin-bottom:8px">
+      <div style="font-size:11px;font-weight:700;color:#8B6914;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">🔍 Cerca tra tutti i movimenti</div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <div style="position:relative;flex:1">
+          <input type="text" id="banca-search" placeholder="es. Laser, Logista, Stefania..." style="width:100%;padding:10px 12px;border:1.5px solid #e8e8e8;border-radius:10px;font-size:14px">
+        </div>
+        <button onclick="cercaBanca(document.getElementById('banca-search').value)" class="btn-save" style="width:auto;padding:10px 16px;margin:0">Cerca</button>
+        <button onclick="document.getElementById('banca-search').value='';bancaFiltrati=tuttiBancaMovimenti;document.getElementById('banca-container').innerHTML='<div class="empty"><div class="empty-icon">🔍</div><p>Usa il periodo o la ricerca</p></div>'" style="padding:10px;background:var(--beige-pale);border:1.5px solid var(--beige);border-radius:10px;cursor:pointer;font-size:14px;color:var(--nero)">✕</button>
+      </div>
+    </div>
+    <!-- Filtro periodo -->
     <div class="card" style="padding:12px">
-      <div style="font-size:11px;font-weight:700;color:#8B6914;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">Seleziona periodo</div>
+      <div style="font-size:11px;font-weight:700;color:#8B6914;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">📅 Filtra per periodo</div>
       <div style="font-size:11px;color:#aaa;margin-bottom:8px" id="banca-file-info"></div>
       <div class="row2">
         <div class="field"><label>Dal</label><input type="date" id="banca-dal"></div>
         <div class="field"><label>Al</label><input type="date" id="banca-al"></div>
       </div>
       <button class="btn-save" onclick="filtraBanca()">📊 Mostra periodo</button>
-      <div style="display:flex;gap:8px;margin-top:10px;align-items:center">
-        <div style="position:relative;flex:1">
-          <span style="position:absolute;left:12px;top:50%;transform:translateY(-50%);font-size:15px;color:#aaa">🔍</span>
-          <input type="text" id="banca-search" placeholder="Cerca tra i movimenti..." oninput="cercaBanca(this.value)" style="width:100%;padding:10px 12px 10px 36px;border:1.5px solid #e8e8e8;border-radius:10px;font-size:14px">
-        </div>
-        <button onclick="document.getElementById('banca-search').value='';cercaBanca('')" style="padding:10px;background:var(--beige-pale);border:1.5px solid var(--beige);border-radius:10px;cursor:pointer;font-size:14px;color:var(--nero)">✕</button>
-      </div>
       <input type="file" id="file-banca" accept=".xlsx,.xls" onchange="caricaBanca(this)" style="display:none">
     </div>
   </div>
@@ -573,24 +578,17 @@ let bancaFiltrati=[];
 
 function cercaBanca(query){
   const q=query.toLowerCase().trim();
-  if(!q){
-    // Mostra tutti i movimenti del periodo corrente
-    renderBanca(bancaFiltrati, document.getElementById('banca-dal').value+' → '+document.getElementById('banca-al').value);
-    return;
-  }
-  const risultati=bancaFiltrati.filter(m=>
+  if(!q){mostraToast('❌ Inserisci una parola da cercare','err');return;}
+  // Cerca in TUTTI i movimenti, non solo quelli del periodo
+  const risultati=tuttiBancaMovimenti.filter(m=>
     m.op.toLowerCase().includes(q)||
-    m.cat.toLowerCase().includes(q)||
-    m.tipo.toLowerCase().includes(q)
+    m.cat.toLowerCase().includes(q)
   );
   const cont=document.getElementById('banca-container');
   if(risultati.length===0){
     cont.innerHTML='<div class="empty"><div class="empty-icon">🔍</div><p>Nessun movimento trovato per "'+query+'"</p></div>';
     return;
   }
-  const tot=risultati.reduce((s,m)=>s+m.importo,0);
-  const e=risultati.filter(m=>m.importo>0).reduce((s,m)=>s+m.importo,0);
-  const u=risultati.filter(m=>m.importo<0).reduce((s,m)=>s+m.importo,0);
   renderBanca(risultati, 'Ricerca: "'+query+'" — '+risultati.length+' risultati');
 }
 
