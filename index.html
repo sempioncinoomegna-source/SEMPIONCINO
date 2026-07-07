@@ -699,6 +699,21 @@ function showPage(id,btn){
   if(id==='banca')inizializzaBanca();
 }
 
+function inviaWhatsApp(){
+  const testo = `🏪 *Morris Pastorelli — BAR SEMPIONCINO*
+
+📍 Via Caduti di Bologna 7, Omegna 28887 (VB)
+
+🔢 *Codice Fiscale:* PSTMRS96P29B019U
+💼 *Partita IVA:* 02816100032
+📋 *REA:* 321250
+📨 *Codice SDI:* USAL8PV
+📧 *PEC:* morris.pastorelli@pec.it
+🏦 *IBAN:* IT50H0306945550100000019361`;
+  const url = 'https://wa.me/?text=' + encodeURIComponent(testo);
+  window.open(url, '_blank');
+}
+
 // INIT
 const inpData=document.getElementById('inp-data');
 inpData.value=new Date().toISOString().slice(0,10);
