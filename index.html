@@ -766,7 +766,7 @@ async function salva(){
   btn.disabled=true;btn.textContent='⏳ Salvataggio...';
   const d=new Date(data+'T12:00:00');
   try{
-    const res=await jsonp({action:'salvaRiga',mese:d.getMonth(),anno:d.getFullYear(),data,giorno:GIORNI[d.getDay()],chiusura:riposo?0:chiusura,riccardo:riposo?0:rik,pos:riposo?0:pos,tabacchi:riposo?0:tab,note:document.getElementById('inp-note').value,riposo:riposo?'1':'0'});
+    const res=await jsonp({action:'salvaRiga',mese:d.getMonth(),anno:d.getFullYear(),data,giorno:GIORNI[d.getDay()],chiusura:riposo?0:chiusura,riccardo:riposo?0:rik,pos:riposo?0:pos,tabacchi:riposo?0:tab,ubify:riposo?0:(parseFloat(document.getElementById('inp-ubify').value)||0),posUbify:riposo?0:(parseFloat(document.getElementById('inp-pos-ubify').value)||0),note:document.getElementById('inp-note').value,riposo:riposo?'1':'0'});
     if(res.ok){
       mostraToast('✅ Salvato!','ok');
       ['inp-chiusura','inp-riccardo','inp-pos','inp-tabacchi','inp-note'].forEach(id=>{const el=document.getElementById(id);if(el){el.value='';el.disabled=false;}});
