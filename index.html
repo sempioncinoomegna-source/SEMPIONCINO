@@ -1097,10 +1097,24 @@ async function caricaAndamento() {
     const battutoAtteso = speseBar * RICARICO_ATTESO;
     const scartoRicarico = battuto - battutoAtteso;
 
-    // Semaforo battuto
-    const pct = Math.min(100, Math.round(battuto / getImpostazione('obiettivo_battuto') * 100));
-    const colBatt = battuto>=getImpostazione('soglia_verde')?'#1D9E75':battuto>=getImpostazione('soglia_gialla')?'#F59E0B':'#E24B4A';
-    const semBatt = battuto>=getImpostazione('soglia_verde')?'🟢 PERFETTO':battuto>=getImpostazione('soglia_gialla')?'🟡 ATTENZIONE':'🔴 NON VA BENE';
+    // Semaforo battuto — proporzionato al giorno del mese se è il mese corrente
+    const oggi = new Date();
+    const meseOggi = oggi.getMonth();
+    const annoOggi = oggi.getFullYear();
+    const obiettivoMensile = getImpostazione('obiettivo_battuto');
+    let obiettivoRif = obiettivoMensile;
+    let labelObiettivo = fmt(obiettivoMensile);
+    let notaGiorno = '';
+    if(mese === meseOggi && parseInt(anno) === annoOggi) {
+      const giornoOggi = oggi.getDate();
+      const giorniTotMese = new Date(annoOggi, meseOggi+1, 0).getDate();
+      obiettivoRif = Math.round(obiettivoMensile * giornoOggi / giorniTotMese);
+      labelObiettivo = fmt(obiettivoRif) + ' (ad oggi ' + giornoOggi + '/' + giorniTotMese + ')';
+      notaGiorno = ' — obiettivo fine mese: ' + fmt(obiettivoMensile);
+    }
+    const pct = Math.min(100, Math.round(battuto / obiettivoRif * 100));
+    const colBatt = battuto>=obiettivoRif?'#1D9E75':battuto>=(obiettivoRif*0.85)?'#F59E0B':'#E24B4A';
+    const semBatt = battuto>=obiettivoRif?'🟢 IN LINEA':battuto>=(obiettivoRif*0.85)?'🟡 VICINO':'🔴 INDIETRO';
 
     let html = '';
 
@@ -1115,7 +1129,7 @@ async function caricaAndamento() {
         <div style="width:${pct}%;height:100%;background:${colBatt};border-radius:8px;transition:width 0.5s"></div>
       </div>
       <div style="display:flex;justify-content:space-between;font-size:11px;color:#888">
-        <span>€0</span><span>Obiettivo: ${fmt(getImpostazione('obiettivo_battuto'))}</span>
+        <span>€0</span><span>Obiettivo: ${labelObiettivo}${notaGiorno}</span>
       </div>
       ${totUbify>0?`<div style="font-size:12px;color:#555;margin-top:6px">☕ Cassa ${fmt(totCassa)} + 🎰 Ubify ${fmt(totUbify)}</div>`:''}
     </div>`;
