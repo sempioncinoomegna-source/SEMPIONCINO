@@ -412,7 +412,7 @@ const TOT_TRIM=SPESE_TRIM_VOCI.reduce((a,b)=>a+b.importo,0);
 const ENTRATE_STRAORD={
   4: [{nome:'Finanziamento distributore sigarette',icona:'🏦',importo:12740}]
 };
-const CAT_COLORS={'Tabacchi':'#E24B4A','Giochi':'#378ADD','Caffè':'#BA7517','Bar (forniture)':'#1D9E75','Latte':'#85B7EB','Surgelati/Gelati':'#5DCAA5','Alimentari/Bevande':'#EF9F27','Snack/Dolciumi':'#F0997B','Utenze':'#7F77DD','Macchinette/Tech':'#D4537E','Manutenzione':'#888780','Telefonia':'#639922','Commissioni POS':'#D85A30','Varie':'#B4B2A9'};
+const CAT_COLORS={'Tabacchi':'#E24B4A','Giochi':'#378ADD','Caffè':'#BA7517','Bar (forniture)':'#1D9E75','Latte':'#85B7EB','Surgelati/Gelati':'#5DCAA5','Alimentari/Bevande':'#EF9F27','Snack/Dolciumi':'#F0997B','Cartine/Sigarette elettroniche':'#D4537E','Tabacchi (trasporto)':'#E24B4A','Utenze':'#7F77DD','Macchinette/Tech':'#D4537E','Manutenzione':'#888780','Telefonia':'#639922','Commissioni POS':'#D85A30','Varie':'#B4B2A9'};
 let SPESE_FATTURE={
   3:{'Tabacchi (trasporto/fornitura)':804.76,'Caffè':800.29,'Bar (forniture)':1278.80,'Latte':155.90,'Surgelati/Gelati':1888.32,'Alimentari/Bevande':322.88,'Snack/Dolciumi':360.67,'Utenze':736.00,'Macchinette/Tech':98.47,'Manutenzione':366.00},
   4:{'Tabacchi (trasporto/fornitura)':1657.64,'Caffè':1013.66,'Bar (forniture)':851.60,'Latte':31.20,'Surgelati/Gelati':1473.88,'Alimentari/Bevande':252.50,'Utenze':733.00,'Macchinette/Tech':14758.44,'Telefonia':42.64,'Commissioni POS':21.96,'Varie':1845.86},
@@ -1163,7 +1163,7 @@ async function caricaAndamento() {
     </div>
     <div style="font-size:13px;font-weight:600;color:#555;margin:10px 0 6px">Fatture bar</div>`;
     if(fatBar>0){
-      ['Caffè','Bar (forniture)','Surgelati/Gelati','Latte','Alimentari/Bevande','Snack/Dolciumi'].forEach(cat=>{
+      ['Caffè','Bar (forniture)','Surgelati/Gelati','Latte','Alimentari/Bevande','Snack/Dolciumi','Cartine/Sigarette elettroniche','Tabacchi (trasporto)'].forEach(cat=>{
         var v=fatture.filter(f=>f.categoria===cat).reduce((s,f)=>s+parseFloat(f.importo),0);
         if(v>0) html+=`<div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0;border-bottom:1px solid #f5f5f5"><span style="color:#555">${cat}</span><span>${fmt(v)}</span></div>`;
       });
@@ -1478,6 +1478,9 @@ async function controlloFattureIncasso() {
 }
 
 
+// Pre-carica eventi Festa della Birra
+(function(){try{var s=localStorage.getItem(EVENTI_KEY);var p=s?JSON.parse(s):[];var h=p.some(function(e){return e.id==='birra_w1';});if(!h){var n=[{"id": "birra_w1", "nome": "🍺 Festa della Birra — Weekend 1", "date": "26-27 settembre 2026", "spesa": [{"nome": "Gin", "qty": "10 bt"}, {"nome": "Tonica", "qty": "12 bt"}, {"nome": "Lemon", "qty": "12 bt"}, {"nome": "Vodka", "qty": "2 bt"}, {"nome": "RedBull", "qty": "1 conf"}, {"nome": "Jäger", "qty": "3 bt"}, {"nome": "Montenegro", "qty": "2 bt"}, {"nome": "Aperol", "qty": "5 bt"}, {"nome": "Campari", "qty": "2 bt+1 conf"}, {"nome": "Baileys", "qty": "2 bt"}, {"nome": "Prosecco", "qty": "1 cassa da 6"}, {"nome": "Aranciata Amara", "qty": "1 conf"}, {"nome": "Acqua frizzante", "qty": "9 da 12"}, {"nome": "Acqua naturale", "qty": "6 da 12"}, {"nome": "Ghiaccio", "qty": "10 conf"}, {"nome": "Fusti birra 20L", "qty": "45 fusti totali"}, {"nome": "Bicchieri 400cc", "qty": "28 conf da 50pz"}], "incasso": 9785.8, "cassa": 2795.8, "ubify": 0, "riki": 6990.0, "costo": 5283.96, "voci_costo": [{"nome": "🍺 Birra (45 fusti × €60)", "importo": 2700.0, "fatturata": true}, {"nome": "🍺 Birra extra", "importo": 600.0, "fatturata": true}, {"nome": "🍺 Fusti Maulini + CO2", "importo": 320.07, "fatturata": true}, {"nome": "🥤 Bicchieri VIMAI fatt.44", "importo": 101.89, "fatturata": true}, {"nome": "🥤 Bicchieri VIMAI fatt.47", "importo": 126.0, "fatturata": true}, {"nome": "🥤 Bicchieri VIMAI fatt.48", "importo": 36.0, "fatturata": true}, {"nome": "👤 Personale Erika W1", "importo": 150.0, "fatturata": false}, {"nome": "👤 Personale Stefania W1", "importo": 100.0, "fatturata": false}, {"nome": "👤 Personale Alessandro W1", "importo": 150.0, "fatturata": false}, {"nome": "📦 Spese extra W1", "importo": 1000.0, "fatturata": false}], "note": ""}, {"id": "birra_w2", "nome": "🍺 Festa della Birra — Weekend 2", "date": "3-4 ottobre 2026", "spesa": [], "incasso": 7091.5, "cassa": 2591.5, "ubify": 0, "riki": 4500.0, "costo": 1250.0, "voci_costo": [{"nome": "👤 Personale Stefania W2", "importo": 100.0, "fatturata": false}, {"nome": "👤 Personale Alessandro W2", "importo": 150.0, "fatturata": false}, {"nome": "📦 Spese extra W2", "importo": 1000.0, "fatturata": false}], "note": ""}];var a=p.filter(function(e){return e.id!=='birra_w1'&&e.id!=='birra_w2';});localStorage.setItem(EVENTI_KEY,JSON.stringify(n.concat(a)));setTimeout(function(){n.forEach(function(ev){salvaEventoSheet(ev);});},3000);}}catch(e){}
+})();
 // INIT
 const inpData=document.getElementById('inp-data');
 inpData.value=new Date().toISOString().slice(0,10);
