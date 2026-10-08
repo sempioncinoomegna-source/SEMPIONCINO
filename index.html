@@ -155,7 +155,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <div class="field"><label>💳 POS Ubify (€)</label><input type="number" id="inp-pos-ubify" placeholder="0.00" step="0.01" min="0" inputmode="decimal"></div>
     </div>
     <div class="row2" id="row-pos-tab" style="display:none">
-      <div class="field"><label>💳 POS (€)</label><input type="number" id="inp-pos" placeholder="0.00" step="0.01" min="0" inputmode="decimal"></div>
       <div class="field"><label>🚬 Tabacchi (€)</label><input type="number" id="inp-tabacchi" placeholder="0.00" step="0.01" min="0" inputmode="decimal"></div>
     </div>
     <div class="field"><label>Note</label><input type="text" id="inp-note" placeholder="es. apertura ridotta, scontrino sbagliato..."></div>
@@ -354,15 +353,22 @@ const MESI_NOMI=['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio
 const MESE_INIZIO_POS=4;
 const MESI_TRIM=[2,5,8,11];
 const SPESE_FISSE=[
-  {nome:'Stefania (stipendio + contributi)',icona:'👤',importo:2500},
+  {nome:'Stefania (stipendio)',icona:'👤',importo:1406},
   {nome:'Sandro (stipendio)',icona:'👤',importo:1800},
-  {nome:'Titolare',icona:'👔',importo:1500},
-  {nome:'Affitto',icona:'🏠',importo:1000},
+  {nome:'Affitto (Mendicino Teresa)',icona:'🏠',importo:1000},
+  {nome:'Vono Domenico (licenza)',icona:'📋',importo:1000},
   {nome:'Restituzione Cinzia',icona:'💰',importo:1000},
-  {nome:'Canone distributore tabacchi',icona:'🚬',importo:380},
   {nome:'Fondo accantonamento ACOMEA',icona:'🏦',importo:1770},
-  {nome:'Spese extra mensili',icona:'📦',importo:1800}
+  {nome:'Tasse/F24',icona:'🏛️',importo:828},
+  {nome:'Utenze (energia/acqua)',icona:'💡',importo:544},
+  {nome:'Assicurazione',icona:'🛡️',importo:120},
+  {nome:'Telefonia (Fastweb)',icona:'📱',importo:43},
+  {nome:'ITagency (tabacchi)',icona:'🚬',importo:267},
+  {nome:'Finanziamento distributore',icona:'💳',importo:315},
+  {nome:'Studio paghe (Colobara)',icona:'📊',importo:202},
 ];
+// Vono aumenta a 1500 da agosto 2026 (mese indice 7)
+const VONO_AUG = 1500;
 const TOT_FISSE=SPESE_FISSE.reduce((a,b)=>a+b.importo,0);
 const SPESE_TRIM_VOCI=[{nome:'TFR Stefania',icona:'💼',importo:500},{nome:'Contributi Sandro + Morris',icona:'👥',importo:2000}];
 const TOT_TRIM=SPESE_TRIM_VOCI.reduce((a,b)=>a+b.importo,0);
@@ -704,6 +710,55 @@ function showPage(id,btn){
   if(id==='spese')caricaSpeseDaSheet();
   if(id==='aggi')document.getElementById('aggi-riepilogo').innerHTML='<div class="card"><p style="color:#888;font-size:14px;text-align:center;padding:8px">Clicca ↻ per caricare il riepilogo aggi</p></div>';
   if(id==='banca')inizializzaBanca();
+  if(id==='eventi')renderEventi();
+}
+
+function apriModificaGiorno(data, mese, anno){
+  const righe = ultimoMeseDati || [];
+  const r = righe.find(x => x.data === data) || {};
+  document.getElementById('modal-giorno-title').textContent = 'Modifica ' + (r.giorno||'') + ' ' + (data?data.slice(8):'') ;
+  document.getElementById('mg-cassa').value = parseFloat(r.chiusura)||'';
+  document.getElementById('mg-ubify').value = parseFloat(r.ubify)||'';
+  document.getElementById('mg-riki').value = parseFloat(r.rik)||'';
+  document.getElementById('mg-tab').value = parseFloat(r.tabacchi)||'';
+  document.getElementById('mg-note').value = (r.note && r.note !== 'RIPOSO') ? r.note : '';
+  document.getElementById('mg-riposo').checked = r.note === 'RIPOSO';
+  document.getElementById('mg-data').value = data;
+  document.getElementById('mg-mese').value = mese;
+  document.getElementById('mg-anno').value = anno;
+  document.getElementById('modal-giorno').style.display = 'flex';
+}
+
+async function salvaModificaGiorno(){
+  const data = document.getElementById('mg-data').value;
+  const mese = parseInt(document.getElementById('mg-mese').value);
+  const anno = parseInt(document.getElementById('mg-anno').value);
+  const riposo = document.getElementById('mg-riposo').checked;
+  const chiusura = parseFloat(document.getElementById('mg-cassa').value)||0;
+  const ubify = parseFloat(document.getElementById('mg-ubify').value)||0;
+  const rik = parseFloat(document.getElementById('mg-riki').value)||0;
+  const tab = parseFloat(document.getElementById('mg-tab').value)||0;
+  const note = document.getElementById('mg-note').value;
+  const d = new Date(data+'T12:00:00');
+  try{
+    await jsonp({
+      action:'salvaRiga', mese, anno, data,
+      giorno: GIORNI[d.getDay()],
+      chiusura: riposo?0:chiusura,
+      riccardo: riposo?0:rik,
+      tabacchi: riposo?0:tab,
+      ubify: riposo?0:ubify,
+      posUbify: 0,
+      note: riposo?'RIPOSO':note,
+      riposo: riposo?'1':'0'
+    });
+    document.getElementById('modal-giorno').style.display='none';
+    mostraToast('✅ Salvato!','ok');
+    // Ricarica lista
+    caricaLista();
+  }catch(e){
+    mostraToast('❌ Errore salvataggio','err');
+  }
 }
 
 function inviaWhatsApp(){
@@ -721,6 +776,169 @@ function inviaWhatsApp(){
   ];
   const testo=righe.join('%0A');
   location.href='https://api.whatsapp.com/send?text='+testo;
+}
+
+// ============================================================
+// EVENTI
+// ============================================================
+const EVENTI_KEY = 'sempioncino_eventi';
+
+function salvaEventiStorage(eventi) {
+  try { localStorage.setItem(EVENTI_KEY, JSON.stringify(eventi)); } catch(e) {}
+}
+
+function caricaEventiStorage() {
+  try {
+    const raw = localStorage.getItem(EVENTI_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch(e) { return []; }
+}
+
+function renderEventi() {
+  const eventi = caricaEventiStorage();
+  const cont = document.getElementById('eventi-list');
+  if (eventi.length === 0) {
+    cont.innerHTML = '<div class="empty" style="padding:20px"><div class="empty-icon">🎉</div><p>Nessun evento ancora.<br>Crea il primo!</p></div>';
+    return;
+  }
+  let html = '';
+  eventi.forEach((ev, idx) => {
+    const colBadge = ev.incasso > 0 ? '#1D9E75' : '#888';
+    html += `<div class="card" style="padding:14px;margin-bottom:8px;border-left:4px solid ${colBadge}">
+      <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px">
+        <div>
+          <div style="font-size:16px;font-weight:700">${ev.nome}</div>
+          <div style="font-size:12px;color:#888">${ev.date}</div>
+        </div>
+        <button onclick="eliminaEvento(${idx})" style="background:#fee;border:none;border-radius:8px;padding:4px 8px;color:#c00;cursor:pointer;font-size:12px">🗑️</button>
+      </div>`;
+
+    // Incasso
+    if (ev.incasso > 0) {
+      html += `<div style="background:#E8F5E9;border-radius:10px;padding:10px;margin-bottom:8px">
+        <div style="font-size:11px;font-weight:700;color:#1D9E75;text-transform:uppercase">💰 Incasso evento</div>
+        <div style="font-size:20px;font-weight:800;color:#1D9E75">${fmt(ev.incasso)}</div>
+        <div style="font-size:11px;color:#888">Cassa ${fmt(ev.cassa)} + Riki ${fmt(ev.riki)}</div>
+      </div>`;
+    } else {
+      html += `<button onclick="caricaIncassoEvento(${idx})" style="width:100%;background:#f5f5f5;border:1.5px dashed #ccc;border-radius:10px;padding:10px;color:#888;cursor:pointer;font-size:13px;margin-bottom:8px">📊 Carica incasso dal Google Sheet</button>`;
+    }
+
+    // Costo spesa
+    if (ev.costo > 0) {
+      const margine = ev.incasso - ev.costo;
+      const colM = margine >= 0 ? '#1D9E75' : '#E24B4A';
+      html += `<div style="display:flex;gap:8px;margin-bottom:8px">
+        <div style="flex:1;background:#FFF3E0;border-radius:10px;padding:10px;text-align:center">
+          <div style="font-size:11px;color:#E65100;font-weight:600">COSTO SPESA</div>
+          <div style="font-size:16px;font-weight:700;color:#E65100">${fmt(ev.costo)}</div>
+        </div>
+        ${ev.incasso > 0 ? `<div style="flex:1;background:${margine>=0?'#E8F5E9':'#FFEBEE'};border-radius:10px;padding:10px;text-align:center">
+          <div style="font-size:11px;color:${colM};font-weight:600">MARGINE</div>
+          <div style="font-size:16px;font-weight:700;color:${colM}">${margine>=0?'+':''}${fmt(margine)}</div>
+        </div>` : ''}
+      </div>`;
+    } else {
+      html += `<button onclick="aggiornaCosto(${idx})" style="width:100%;background:#f5f5f5;border:1.5px dashed #ccc;border-radius:10px;padding:8px;color:#888;cursor:pointer;font-size:12px;margin-bottom:8px">💸 Aggiungi costo spesa (opzionale)</button>`;
+    }
+
+    // Lista spesa
+    if (ev.spesa && ev.spesa.length > 0) {
+      html += `<details><summary style="font-size:12px;color:#8B6914;cursor:pointer;font-weight:600">📋 Lista della spesa (${ev.spesa.length} voci)</summary>
+        <div style="margin-top:8px;display:flex;flex-direction:column;gap:4px">`;
+      ev.spesa.forEach(s => {
+        html += `<div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:1px solid #f5f5f5">
+          <span>${s.nome}</span>
+          <span style="color:#666;font-weight:500">${s.qty}${s.prezzo?` — ${fmt(s.prezzo)}`:''}${s.note?` <span style="color:#aaa">(${s.note})</span>`:''}</span>
+        </div>`;
+      });
+      html += `</div></details>`;
+    }
+
+    html += `</div>`;
+  });
+  cont.innerHTML = html;
+}
+
+function nuovoEvento() {
+  const nome = prompt('Nome evento:');
+  if (!nome) return;
+  const date = prompt('Date (es. 26-27 settembre 2026):');
+  if (!date) return;
+
+  // Lista della spesa
+  const spesa = [];
+  if (confirm('Vuoi inserire la lista della spesa ora?')) {
+    let continua = true;
+    while (continua) {
+      const voce = prompt('Voce (es. "Gin x10") o lascia vuoto per finire:');
+      if (!voce) { continua = false; break; }
+      spesa.push({ nome: voce, qty: '', prezzo: 0, note: '' });
+    }
+  }
+
+  const eventi = caricaEventiStorage();
+  eventi.unshift({ nome, date, spesa, incasso: 0, cassa: 0, riki: 0, costo: 0, note: '' });
+  salvaEventiStorage(eventi);
+  renderEventi();
+}
+
+async function caricaIncassoEvento(idx) {
+  const eventi = caricaEventiStorage();
+  const ev = eventi[idx];
+  const dalStr = prompt('Data inizio evento (YYYY-MM-DD, es. 2026-09-26):');
+  if (!dalStr) return;
+  const alStr = prompt('Data fine evento (YYYY-MM-DD, es. 2026-09-27):');
+  if (!alStr) return;
+
+  mostraToast('⏳ Carico incasso...', 'ok');
+  try {
+    const dal = new Date(dalStr + 'T00:00:00');
+    const al = new Date(alStr + 'T23:59:59');
+    // Leggi le righe dal Google Sheet per il periodo
+    let totCassa = 0, totRiki = 0;
+    const anno = dal.getFullYear();
+    const mesiDaLeggere = new Set();
+    for (let d = new Date(dal); d <= al; d.setMonth(d.getMonth()+1)) {
+      mesiDaLeggere.add(d.getMonth());
+    }
+    for (const mese of mesiDaLeggere) {
+      const res = await jsonp({action:'leggiMese', mese, anno});
+      const righe = res.righe || [];
+      righe.forEach(r => {
+        const dataRiga = new Date(r.data + 'T12:00:00');
+        if (dataRiga >= dal && dataRiga <= al) {
+          totCassa += parseFloat(r.chiusura) || 0;
+          totRiki += parseFloat(r.rik) || 0;
+        }
+      });
+    }
+    ev.incasso = totCassa + totRiki;
+    ev.cassa = totCassa;
+    ev.riki = totRiki;
+    salvaEventiStorage(eventi);
+    renderEventi();
+    mostraToast(`✅ Incasso caricato: ${fmt(ev.incasso)}`, 'ok');
+  } catch(e) {
+    mostraToast('❌ Errore caricamento', 'err');
+  }
+}
+
+function aggiornaCosto(idx) {
+  const eventi = caricaEventiStorage();
+  const costo = parseFloat(prompt('Costo totale della spesa (€):'));
+  if (isNaN(costo)) return;
+  eventi[idx].costo = costo;
+  salvaEventiStorage(eventi);
+  renderEventi();
+}
+
+function eliminaEvento(idx) {
+  if (!confirm('Eliminare questo evento?')) return;
+  const eventi = caricaEventiStorage();
+  eventi.splice(idx, 1);
+  salvaEventiStorage(eventi);
+  renderEventi();
 }
 
 // INIT
@@ -853,6 +1071,7 @@ async function caricaMese(){
 }
 
 function renderLista(righe,mese){
+  ultimoMeseDati = righe;
   const cont=document.getElementById('lista-container');
   if(righe.length===0){cont.innerHTML='<div class="empty"><div class="empty-icon">📭</div><p>Nessuna giornata inserita.</p></div>';return;}
   const hasPT=mese>=MESE_INIZIO_POS;
@@ -866,16 +1085,20 @@ function renderLista(righe,mese){
     const ps=hasPT?(parseFloat(r.pos)||0):0;
     const tb=hasPT?(parseFloat(r.tabacchi)||0):0;
     let amounts='';
+    const ub=parseFloat(r.ubify)||0;
+    const pub=parseFloat(r.posUbify)||0;
     if(r.note!=='RIPOSO'){
       amounts='<div class="entry-amounts">';
       amounts+='<div class="entry-chip"><span>Cassa </span>'+fmt(c)+'</div>';
+      if(ub>0)amounts+='<div class="entry-chip"><span>Ubify </span>'+fmt(ub)+'</div>';
       if(rk>0)amounts+='<div class="entry-chip"><span>Riki </span>'+fmt(rk)+'</div>';
       if(hasPT&&ps>0)amounts+='<div class="entry-chip"><span>POS </span>'+fmt(ps)+'</div>';
       if(hasPT&&tb>0)amounts+='<div class="entry-chip"><span>Tab. </span>'+fmt(tb)+'</div>';
       amounts+='</div>';
     }
     const dObj=new Date(r.data+'T12:00:00');
-    html+='<div class="entry"><div class="entry-date">'+g+'</div><div class="entry-info"><div class="entry-day">'+(r.giorno||'')+'</div>'+amounts+nota+'</div><button class="del-btn" onclick="elimina(&quot;'+r.data+'&quot;,'+dObj.getMonth()+','+dObj.getFullYear()+')">🗑</button></div>';
+    const rJson=encodeURIComponent(JSON.stringify(r));
+    html+='<div class="entry" onclick="apriModificaGiorno(\''+r.data+'\','+dObj.getMonth()+','+dObj.getFullYear()+')" style="cursor:pointer"><div class="entry-date">'+g+'</div><div class="entry-info"><div class="entry-day">'+(r.giorno||'')+'</div>'+amounts+nota+'</div><button class="del-btn" onclick="event.stopPropagation();elimina(&quot;'+r.data+'&quot;,'+dObj.getMonth()+','+dObj.getFullYear()+')">🗑</button></div>';
   });
   html+='</div>';
   cont.innerHTML=html;
@@ -890,13 +1113,26 @@ async function elimina(data,mese,anno){
   }catch(e){mostraToast('❌ Errore','err');}
 }
 
+// ============================================================
+// SEZIONE SPESE — due viste: fiscale (senza Riki) e reale (con Riki)
+// ============================================================
+
+function getSpeseFisse(mese) {
+  // mese = 0-based (0=Gen, 7=Ago)
+  const fisse = SPESE_FISSE.map(s => ({...s}));
+  // Vono aumenta a 1500 da agosto 2026
+  const vonoIdx = fisse.findIndex(s => s.nome.includes('Vono'));
+  if (vonoIdx >= 0 && mese >= 7) fisse[vonoIdx].importo = VONO_AUG;
+  return fisse;
+}
+
 async function caricaSpeseDaSheet(){
   const mese=parseInt(document.getElementById('sp-mese').value);
   const anno=document.getElementById('sp-anno').value;
   const contS=document.getElementById('spese-container');
   const contU=document.getElementById('utile-container');
-  contS.innerHTML='<div class="loading">⏳ Caricamento fatture...</div>';
-  contU.innerHTML='<div class="loading">⏳ Caricamento incassi...</div>';
+  contS.innerHTML='<div class="loading">⏳ Caricamento...</div>';
+  contU.innerHTML='';
   try{
     // Carica fatture e incassi in parallelo
     const [resFatture, resIncassi] = await Promise.all([
@@ -924,29 +1160,55 @@ async function caricaSpeseDaSheet(){
     const totTab=parseFloat(resIncassi.totTab)||0;
     const totF=Object.values(sfMese).reduce((a,b)=>a+b,0);
     const isTrim=MESI_TRIM.includes(mese);
-    const totFisse=TOT_FISSE+(isTrim?TOT_TRIM:0);
+    const fisseMese=getSpeseFisse(mese);
+    const totFisse=fisseMese.reduce((a,b)=>a+b.importo,0)+(isTrim?TOT_TRIM:0);
     const entStr=ENTRATE_STRAORD[mese+1]||[];
     const totEntStr=entStr.reduce((a,b)=>a+b.importo,0);
     const totSpese=totF+totFisse-totEntStr;
-    const utile=totIncassi-totSpese;
-    const hasPT=mese>=MESE_INIZIO_POS;
-    const col=utile>=0?'#3B6D11':'#A32D2D';
-    let html='<div class="card" style="padding:12px"><div class="stat-grid">';
+
+    // INCASSO FISCALE = Cassa + Ubify + Aggi (NO Riki, NO Tabacchi)
+    const totUbify=parseFloat(resIncassi.totUbify)||0;
+    const incFiscale=totCassa+totUbify+totAggi;
+    // INCASSO REALE = Fiscale + Riki
+    const incReale=incFiscale+totRik;
+
+    const utileFiscale=incFiscale-totSpese;
+    const utileReale=incReale-totSpese;
+
+    const colF=utileFiscale>=0?'#3B6D11':'#A32D2D';
+    const colR=utileReale>=0?'#1D4E89':'#A32D2D';
+
+    let html='';
+
+    // SEZIONE 1: CONTROLLO FISCALE
+    html+='<div class="card" style="border:2px solid #8B6914;padding:14px;margin-bottom:8px">';
+    html+='<div style="font-size:11px;font-weight:700;color:#8B6914;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px">⚖️ Sezione 1 — Controllo Fiscale (senza Riki)</div>';
+    html+='<div class="stat-grid" style="margin-bottom:10px">';
     html+='<div class="stat"><div class="stat-label">☕ Cassa</div><div class="stat-value">'+fmt(totCassa)+'</div></div>';
-    html+='<div class="stat"><div class="stat-label">👤 Riki</div><div class="stat-value">'+fmt(totRik)+'</div></div>';
-    if(hasPT){
-      html+='<div class="stat"><div class="stat-label">💳 POS</div><div class="stat-value">'+fmt(totPos)+'</div></div>';
-      html+='<div class="stat"><div class="stat-label">🚬 Tabacchi</div><div class="stat-value">'+fmt(totTab)+'</div></div>';
-    }
-    html+='<div class="stat"><div class="stat-label">🎰 Aggi</div><div class="stat-value">'+fmt(totAggi)+'</div></div>';
-    html+='<div class="stat full"><div class="stat-label">TOT. INCASSO</div><div class="stat-value">'+fmt(totIncassi)+'</div></div>';
-    html+='</div></div>';
-    html+='<div class="card" style="padding:16px;border:2px solid '+col+'">';
-    html+='<div style="font-size:11px;font-weight:700;color:'+col+';text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px">💰 Utile netto '+MESI_NOMI[mese]+'</div>';
-    html+='<div style="font-size:28px;font-weight:800;color:'+col+'">'+(utile>=0?'+':'')+fmt(utile)+'</div>';
-    html+='<div style="font-size:12px;color:#888;margin-top:4px">'+fmt(totIncassi)+' incassi − '+fmt(totSpese)+' spese nette</div>';
-    if(totEntStr>0)html+='<div style="font-size:11px;color:#3B6D11;margin-top:4px">✅ Finanziamento +'+fmt(totEntStr)+' dedotto dalle spese</div>';
+    html+='<div class="stat"><div class="stat-label">🎰 Ubify</div><div class="stat-value">'+fmt(totUbify)+'</div></div>';
+    html+='<div class="stat full"><div class="stat-label">🎰 Aggi</div><div class="stat-value">'+fmt(totAggi)+'</div></div>';
+    html+='<div class="stat full" style="background:'+colF+'"><div class="stat-label" style="color:rgba(255,255,255,0.8)">INCASSO DICHIARATO</div><div class="stat-value" style="color:#fff">'+fmt(incFiscale)+'</div></div>';
     html+='</div>';
+    html+='<div style="display:flex;justify-content:space-between;padding:8px 0;font-size:13px"><span>Fatture fornitori</span><span style="color:#E24B4A;font-weight:600">−'+fmt(totF)+'</span></div>';
+    html+='<div style="display:flex;justify-content:space-between;padding:8px 0;font-size:13px;border-bottom:1px solid #f0f0f0"><span>Spese fisse</span><span style="color:#E24B4A;font-weight:600">−'+fmt(totFisse)+'</span></div>';
+    html+='<div style="display:flex;justify-content:space-between;padding:10px 0;font-size:16px;font-weight:700"><span>UTILE FISCALE</span><span style="color:'+colF+'">'+(utileFiscale>=0?'+':'')+fmt(utileFiscale)+'</span></div>';
+    html+='<div style="font-size:11px;color:#888">'+fmt(incFiscale)+' incassi − '+fmt(totSpese)+' spese</div>';
+    html+='</div>';
+
+    // SEZIONE 2: UTILE REALE
+    html+='<div class="card" style="border:2px solid #1D4E89;padding:14px">';
+    html+='<div style="font-size:11px;font-weight:700;color:#1D4E89;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px">💰 Sezione 2 — Utile Reale (con Riki)</div>';
+    html+='<div class="stat-grid" style="margin-bottom:10px">';
+    html+='<div class="stat"><div class="stat-label">☕ Cassa+Ubify+Aggi</div><div class="stat-value">'+fmt(incFiscale)+'</div></div>';
+    html+='<div class="stat"><div class="stat-label">👤 Riki</div><div class="stat-value">'+fmt(totRik)+'</div></div>';
+    html+='<div class="stat full" style="background:#1D4E89"><div class="stat-label" style="color:rgba(255,255,255,0.8)">INCASSO TOTALE REALE</div><div class="stat-value" style="color:#fff">'+fmt(incReale)+'</div></div>';
+    html+='</div>';
+    html+='<div style="display:flex;justify-content:space-between;padding:8px 0;font-size:13px"><span>Fatture fornitori</span><span style="color:#E24B4A;font-weight:600">−'+fmt(totF)+'</span></div>';
+    html+='<div style="display:flex;justify-content:space-between;padding:8px 0;font-size:13px;border-bottom:1px solid #f0f0f0"><span>Spese fisse</span><span style="color:#E24B4A;font-weight:600">−'+fmt(totFisse)+'</span></div>';
+    html+='<div style="display:flex;justify-content:space-between;padding:10px 0;font-size:16px;font-weight:700"><span>UTILE REALE</span><span style="color:'+colR+'">'+(utileReale>=0?'+':'')+fmt(utileReale)+'</span></div>';
+    html+='<div style="font-size:11px;color:#888">'+fmt(incReale)+' incassi totali − '+fmt(totSpese)+' spese</div>';
+    html+='</div>';
+
     contU.innerHTML=html;
   }catch(e){
     contS.innerHTML='<div class="empty"><div class="empty-icon">📡</div><p>Errore caricamento. Riprova.</p></div>';
@@ -1318,7 +1580,43 @@ function generaPDF(){
 // Init spese
 renderSpeseFisse(new Date().getMonth());
 </script>
-<div id="modal-info" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:999;align-items:center;justify-content:center">
+<div id="page-eventi" class="page">
+  <div class="card" style="padding:12px">
+    <div class="card-title">🎉 Eventi</div>
+    <div id="eventi-list"></div>
+    <button onclick="nuovoEvento()" class="btn-save" style="margin-top:8px">+ Nuovo evento</button>
+  </div>
+</div>
+
+<div id="modal-giorno" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:999;align-items:flex-end;justify-content:center">
+  <div style="background:#fff;border-radius:20px 20px 0 0;padding:24px;width:100%;max-height:85vh;overflow-y:auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <div style="font-size:16px;font-weight:800;color:#1a1410" id="modal-giorno-title">Modifica giornata</div>
+      <button onclick="document.getElementById('modal-giorno').style.display='none'" style="background:#f0f0f0;border:none;border-radius:50%;width:32px;height:32px;font-size:18px;cursor:pointer">×</button>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div class="row2">
+        <div class="field"><label>☕ Cassa (€)</label><input type="number" id="mg-cassa" step="0.01" min="0" inputmode="decimal"></div>
+        <div class="field"><label>🎰 Ubify (€)</label><input type="number" id="mg-ubify" step="0.01" min="0" inputmode="decimal"></div>
+      </div>
+      <div class="row2">
+        <div class="field"><label>👤 Riki (€)</label><input type="number" id="mg-riki" step="0.01" min="0" inputmode="decimal"></div>
+        <div class="field"><label>🚬 Tabacchi (€)</label><input type="number" id="mg-tab" step="0.01" min="0" inputmode="decimal"></div>
+      </div>
+      <div class="field"><label>📝 Note</label><input type="text" id="mg-note" placeholder="es. giornata lenta..."></div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <input type="checkbox" id="mg-riposo" style="width:18px;height:18px">
+        <label for="mg-riposo" style="font-size:14px">Giorno di riposo</label>
+      </div>
+    </div>
+    <input type="hidden" id="mg-data">
+    <input type="hidden" id="mg-mese">
+    <input type="hidden" id="mg-anno">
+    <button onclick="salvaModificaGiorno()" class="btn-save" style="margin-top:16px">💾 Salva modifiche</button>
+  </div>
+</div>
+
+<div id="modal-info"   style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:999;align-items:center;justify-content:center">
   <div style="background:#fff;border-radius:20px;padding:24px;margin:16px;max-width:420px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,0.3)">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
       <div style="font-size:16px;font-weight:800;color:#1a1410">📋 Dati Fiscali</div>
