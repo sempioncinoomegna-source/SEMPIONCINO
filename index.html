@@ -121,12 +121,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 <div class="tabs">
   <button class="tab active" onclick="showPage('inserisci',this)"><span class="tab-icon">📝</span>Inserisci</button>
   <button class="tab" onclick="showPage('lista',this)"><span class="tab-icon">📋</span>Lista</button>
+  <button class="tab" onclick="showPage('andamento',this)"><span class="tab-icon">📊</span>Andamento</button>
   <button class="tab" onclick="showPage('aggi',this)"><span class="tab-icon">🎰</span>Aggi</button>
   <button class="tab" onclick="showPage('spese',this)"><span class="tab-icon">💸</span>Spese</button>
-  <button class="tab" onclick="showPage('confronto',this)"><span class="tab-icon">⚖️</span>Confronto</button>
-  <button class="tab" onclick="showPage('settimane',this)"><span class="tab-icon">📅</span>Settimane</button>
-  <button class="tab" onclick="showPage('anno',this)"><span class="tab-icon">🏆</span>Anno</button>
   <button class="tab" onclick="showPage('banca',this)"><span class="tab-icon">🏦</span>Banca</button>
+  <button class="tab" onclick="showPage('eventi',this)"><span class="tab-icon">🎉</span>Eventi</button>
 </div>
 
 <!-- INSERISCI -->
@@ -244,6 +243,38 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   <div id="utile-container"></div>
 
   <div id="spese-container"></div>
+</div>
+
+<!-- ANDAMENTO -->
+<div class="page" id="page-andamento">
+  <div class="card" style="padding:12px;margin-bottom:8px">
+    <div class="card-title">📊 Seleziona mese</div>
+    <div class="row2">
+      <div class="field"><label>Mese</label>
+        <select id="and-mese" onchange="caricaAndamento()">
+          <option value="0">Gennaio</option><option value="1">Febbraio</option>
+          <option value="2">Marzo</option><option value="3">Aprile</option>
+          <option value="4">Maggio</option><option value="5">Giugno</option>
+          <option value="6">Luglio</option><option value="7">Agosto</option>
+          <option value="8">Settembre</option><option value="9">Ottobre</option>
+          <option value="10">Novembre</option><option value="11">Dicembre</option>
+        </select>
+      </div>
+      <div class="field"><label>Anno</label>
+        <select id="and-anno" onchange="caricaAndamento()">
+          <option value="2026">2026</option><option value="2025">2025</option>
+        </select>
+      </div>
+    </div>
+  </div>
+  <div id="andamento-container"><div class="loading">⏳ Caricamento...</div></div>
+  <div class="card" style="padding:14px;margin-top:8px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <div class="card-title" style="margin:0">⚙️ Spese fisse mensili</div>
+      <button onclick="renderSpeseFisseEditor()" style="background:var(--beige-pale);border:1.5px solid var(--beige);border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;color:var(--nero)">✏️ Modifica</button>
+    </div>
+    <div id="spese-fisse-editor"><div style="font-size:12px;color:#aaa">Clicca Modifica per vedere e modificare le spese fisse</div></div>
+  </div>
 </div>
 
 <!-- CONFRONTO -->
@@ -710,6 +741,13 @@ function showPage(id,btn){
   if(id==='spese')caricaSpeseDaSheet();
   if(id==='aggi')document.getElementById('aggi-riepilogo').innerHTML='<div class="card"><p style="color:#888;font-size:14px;text-align:center;padding:8px">Clicca ↻ per caricare il riepilogo aggi</p></div>';
   if(id==='banca')inizializzaBanca();
+  if(id==='andamento'){
+    const oggi=new Date();
+    document.getElementById('and-mese').value=oggi.getMonth();
+    document.getElementById('and-anno').value=oggi.getFullYear();
+    caricaAndamento();
+    renderSpeseFisseEditor();
+  }
   if(id==='eventi')renderEventi();
 }
 
@@ -754,6 +792,11 @@ async function salvaModificaGiorno(){
     });
     document.getElementById('modal-giorno').style.display='none';
     mostraToast('✅ Salvato!','ok');
+    // Alert battuto giornaliero
+    const totGiornaliero = (parseFloat(document.getElementById('inp-chiusura').value)||0) + (parseFloat(document.getElementById('inp-ubify').value)||0);
+    if(!riposo && totGiornaliero > 0 && totGiornaliero < 290) {
+      setTimeout(()=>{ mostraToast('⚠️ TROPPO POCO! Battuto €'+totGiornaliero.toFixed(0)+' — obiettivo €280/giorno','err'); }, 1500);
+    }
     // Ricarica lista
     caricaLista();
   }catch(e){
@@ -939,6 +982,267 @@ function eliminaEvento(idx) {
   eventi.splice(idx, 1);
   salvaEventiStorage(eventi);
   renderEventi();
+}
+
+// ============================================================
+// ANDAMENTO
+// ============================================================
+const SPESE_FISSE_DEFAULT = {
+  'Stipendio Stefania':          1600,
+  'F24 (tasse+contributi)':       797,
+  'INAIL (media mens.)':           29,
+  'TFR Stefania (media mens.)':   115,
+  'Contributi Morris+Sandro':     590,
+  'Sandro (stipendio)':           900,
+  'Affitto':                     1160,
+  'ACOMEA':                      1770,
+  'Finanziamento distributore':   315,
+  'Vono Domenico (licenza)':     1500,
+  'Lagostina (commercialista)':   250,
+  'Assicurazione':                140,
+  'Utenze (stima)':              1000,
+  'Telefonia (Fastweb)':           43,
+};
+
+function getSpeseFisseAnd() {
+  try {
+    const saved = localStorage.getItem('sempioncino_spese_fisse');
+    return saved ? JSON.parse(saved) : SPESE_FISSE_DEFAULT;
+  } catch(e) { return SPESE_FISSE_DEFAULT; }
+}
+
+function saveSpeseFisseAnd(obj) {
+  try { localStorage.setItem('sempioncino_spese_fisse', JSON.stringify(obj)); } catch(e) {}
+}
+
+const SPESE_FISSE_AND = getSpeseFisseAnd();
+const TOT_FISSE_AND = Object.values(SPESE_FISSE_AND).reduce((a,b)=>a+b,0);
+const FATTURE_BAR_MEDIA = 2500;
+const AGGI_MEDI = 6093;
+const SOGLIA_BATTUTO = TOT_FISSE_AND + FATTURE_BAR_MEDIA - AGGI_MEDI;
+const OBIETTIVO_BATTUTO = 7300;
+const OBIETTIVO_GIORNALIERO = 290;
+const GIORNI_LAVORATIVI = 25;
+const RICARICO_ATTESO = 3.0;
+
+async function caricaAndamento() {
+  const mese = parseInt(document.getElementById('and-mese').value);
+  const anno = document.getElementById('and-anno').value;
+  const cont = document.getElementById('andamento-container');
+  cont.innerHTML = '<div class="loading">⏳ Caricamento...</div>';
+  try {
+    const [resInc, resFat] = await Promise.all([
+      jsonp({action:'leggiTutto', mese, anno}),
+      jsonp({action:'leggiFatture', mese, anno})
+    ]);
+
+    const totCassa = parseFloat(resInc.totCassa)||0;
+    const totUbify = parseFloat(resInc.totUbify)||0;
+    const totRiki  = parseFloat(resInc.totRik)||0;
+    const totAggi  = parseFloat(resInc.totAggi)||0;
+    const battuto  = totCassa + totUbify;
+    const incFiscale = battuto + totAggi;
+    const incReale   = incFiscale + totRiki;
+
+    // Fatture reali dal sheet
+    const fatture = resFat.fatture || [];
+    const fatBar = fatture.filter(f => ['Caffè','Bar (forniture)','Surgelati/Gelati','Latte',
+      'Alimentari/Bevande','Snack/Dolciumi'].includes(f.categoria))
+      .reduce((s,f) => s+parseFloat(f.importo), 0);
+    const fatUtenze = fatture.filter(f => ['Utenze','Telefonia'].includes(f.categoria))
+      .reduce((s,f) => s+parseFloat(f.importo), 0);
+    const fatAltro = fatture.filter(f => !['Caffè','Bar (forniture)','Surgelati/Gelati','Latte',
+      'Alimentari/Bevande','Snack/Dolciumi','Utenze','Telefonia',
+      'Tabacchi (trasporto)','Giochi/Lotterie'].includes(f.categoria))
+      .reduce((s,f) => s+parseFloat(f.importo), 0);
+    const fatTotale = fatBar + fatUtenze + fatAltro;
+
+    // Spese totali
+    const utenzeReali = fatUtenze > 0 ? fatUtenze : 1000;
+    const speseFisse = TOT_FISSE_AND - 1000 + utenzeReali; // sostituisce stima utenze
+    const speseBar = fatBar > 0 ? fatBar : FATTURE_BAR_MEDIA;
+    const totSpese = speseFisse + speseBar + fatAltro;
+    const utileFiscale = incFiscale - totSpese;
+    const utileReale = incReale - totSpese;
+
+    // Controllo incrociato
+    const battutoAtteso = speseBar * RICARICO_ATTESO;
+    const scartoRicarico = battuto - battutoAtteso;
+
+    // Semaforo battuto
+    const pct = Math.min(100, Math.round(battuto / OBIETTIVO_BATTUTO * 100));
+    const colBatt = battuto >= 7500 ? '#1D9E75' : battuto >= 6500 ? '#F59E0B' : '#E24B4A';
+    const semBatt = battuto >= 7500 ? '🟢 PERFETTO' : battuto >= 6500 ? '🟡 ATTENZIONE' : '🔴 NON VA BENE';
+
+    let html = '';
+
+    // BARRA BATTUTO
+    html += `<div class="card" style="padding:14px;margin-bottom:8px;border:2px solid ${colBatt}">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div style="font-size:13px;font-weight:700;color:${colBatt}">☕ BATTUTO ${MESI_NOMI[mese].toUpperCase()}</div>
+        <div style="font-size:13px;font-weight:700;color:${colBatt}">${semBatt}</div>
+      </div>
+      <div style="font-size:30px;font-weight:800;color:${colBatt};margin-bottom:8px">${fmt(battuto)}</div>
+      <div style="background:#f0f0f0;border-radius:8px;height:16px;overflow:hidden;margin-bottom:6px">
+        <div style="width:${pct}%;height:100%;background:${colBatt};border-radius:8px;transition:width 0.5s"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:#888">
+        <span>€0</span><span>Obiettivo: ${fmt(OBIETTIVO_BATTUTO)}</span>
+      </div>
+      ${totUbify>0?`<div style="font-size:12px;color:#555;margin-top:6px">☕ Cassa ${fmt(totCassa)} + 🎰 Ubify ${fmt(totUbify)}</div>`:''}
+    </div>`;
+
+    // AGGI (contabilità separata)
+    html += `<div class="card" style="padding:14px;margin-bottom:8px;background:#f9f6f0">
+      <div style="font-size:11px;font-weight:700;color:#8B6914;text-transform:uppercase;margin-bottom:8px">🎰 Aggi (contabilità separata)</div>
+      <div style="font-size:24px;font-weight:800;color:#8B6914">${fmt(totAggi)}</div>
+      <div style="font-size:11px;color:#888;margin-top:4px">Tabacchi + Giochi — utile puro, nessuna spesa associata</div>
+    </div>`;
+
+    // UTILE
+    const colF = utileFiscale>=0?'#1D9E75':'#E24B4A';
+    const colR = utileReale>=0?'#1D4E89':'#E24B4A';
+    html += `<div class="card" style="padding:14px;margin-bottom:8px">
+      <div style="font-size:11px;font-weight:700;color:#555;text-transform:uppercase;margin-bottom:10px">💰 Utile mensile</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+        <div style="background:${utileFiscale>=0?'#E8F5E9':'#FFEBEE'};border-radius:12px;padding:12px;text-align:center">
+          <div style="font-size:10px;font-weight:700;color:${colF};text-transform:uppercase;margin-bottom:4px">⚖️ Utile fiscale</div>
+          <div style="font-size:18px;font-weight:800;color:${colF}">${utileFiscale>=0?'+':''}${fmt(utileFiscale)}</div>
+          <div style="font-size:10px;color:#888;margin-top:2px">solo battuto+aggi</div>
+        </div>
+        <div style="background:${utileReale>=0?'#E3F2FD':'#FFEBEE'};border-radius:12px;padding:12px;text-align:center">
+          <div style="font-size:10px;font-weight:700;color:${colR};text-transform:uppercase;margin-bottom:4px">💰 Utile reale</div>
+          <div style="font-size:18px;font-weight:800;color:${colR}">${utileReale>=0?'+':''}${fmt(utileReale)}</div>
+          <div style="font-size:10px;color:#888;margin-top:2px">con Riki</div>
+        </div>
+      </div>
+      <div style="font-size:12px;color:#888;padding:8px 0;border-top:1px solid #f0f0f0">
+        <div style="display:flex;justify-content:space-between;padding:2px 0"><span>Incasso fiscale (battuto+aggi)</span><span style="font-weight:600">${fmt(incFiscale)}</span></div>
+        <div style="display:flex;justify-content:space-between;padding:2px 0"><span>+ Riki</span><span style="font-weight:600">${fmt(totRiki)}</span></div>
+        <div style="display:flex;justify-content:space-between;padding:2px 0"><span>Spese totali</span><span style="font-weight:600;color:#E24B4A">−${fmt(totSpese)}</span></div>
+      </div>
+    </div>`;
+
+    // SPESE DETTAGLIO
+    html += `<div class="card" style="padding:14px;margin-bottom:8px">
+      <div style="font-size:11px;font-weight:700;color:#E65100;text-transform:uppercase;margin-bottom:10px">💸 Spese del mese</div>
+      <div style="font-size:13px;font-weight:600;color:#555;margin-bottom:6px">Spese fisse</div>`;
+    Object.entries(SPESE_FISSE_AND).forEach(([k,v]) => {
+      var val = k === 'Utenze (stima)' ? utenzeReali : v;
+      var note = k === 'Utenze (stima)' && fatUtenze > 0 ? ' (reale)' : k === 'Utenze (stima)' ? ' (stima)' : '';
+      html += `<div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0;border-bottom:1px solid #f5f5f5">
+        <span style="color:#555">${k}${note}</span><span style="font-weight:500">€${val.toLocaleString('it-IT',{minimumFractionDigits:0})}</span>
+      </div>`;
+    });
+    html += `<div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0;font-weight:700;border-top:2px solid #eee;margin-top:4px">
+      <span>Totale fisse</span><span style="color:#E65100">€${speseFisse.toLocaleString('it-IT',{minimumFractionDigits:0})}</span>
+    </div>
+    <div style="font-size:13px;font-weight:600;color:#555;margin:10px 0 6px">Fatture bar</div>`;
+    if(fatBar>0){
+      ['Caffè','Bar (forniture)','Surgelati/Gelati','Latte','Alimentari/Bevande','Snack/Dolciumi'].forEach(cat=>{
+        var v=fatture.filter(f=>f.categoria===cat).reduce((s,f)=>s+parseFloat(f.importo),0);
+        if(v>0) html+=`<div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0;border-bottom:1px solid #f5f5f5"><span style="color:#555">${cat}</span><span>${fmt(v)}</span></div>`;
+      });
+    } else {
+      html+=`<div style="font-size:12px;color:#aaa;padding:4px 0">Media: ${fmt(FATTURE_BAR_MEDIA)} (fatture non ancora caricate)</div>`;
+    }
+    html += `<div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0;font-weight:700;border-top:2px solid #eee;margin-top:4px">
+      <span>Totale bar</span><span style="color:#E65100">${fmt(speseBar)}</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;font-size:14px;padding:8px 0;font-weight:800;border-top:2px solid var(--nero);margin-top:4px">
+      <span>TOTALE SPESE</span><span style="color:#E65100">${fmt(totSpese)}</span>
+    </div></div>`;
+
+    // CONTROLLO INCROCIATO
+    const colInc = scartoRicarico >= 0 ? '#1D9E75' : '#E24B4A';
+    const semInc = scartoRicarico >= 0 ? '✅ IN LINEA' : '⚠️ SOTTO ATTESO';
+    html += `<div class="card" style="padding:14px;border:2px solid ${colInc}">
+      <div style="font-size:11px;font-weight:700;color:${colInc};text-transform:uppercase;margin-bottom:10px">🔍 Controllo incrociato (fatture × ${RICARICO_ATTESO})</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px">
+        <div style="background:#f5f5f5;border-radius:10px;padding:10px;text-align:center">
+          <div style="font-size:10px;color:#888;margin-bottom:4px">Acquisti bar</div>
+          <div style="font-size:15px;font-weight:700">${fmt(speseBar)}</div>
+        </div>
+        <div style="background:#f5f5f5;border-radius:10px;padding:10px;text-align:center">
+          <div style="font-size:10px;color:#888;margin-bottom:4px">Battuto atteso ×3</div>
+          <div style="font-size:15px;font-weight:700">${fmt(battutoAtteso)}</div>
+        </div>
+        <div style="background:${scartoRicarico>=0?'#E8F5E9':'#FFEBEE'};border-radius:10px;padding:10px;text-align:center">
+          <div style="font-size:10px;color:${colInc};margin-bottom:4px">Scarto</div>
+          <div style="font-size:15px;font-weight:700;color:${colInc}">${scartoRicarico>=0?'+':''}${fmt(scartoRicarico)}</div>
+        </div>
+      </div>
+      <div style="font-size:13px;font-weight:700;color:${colInc};text-align:center">${semInc}</div>
+      ${scartoRicarico<0?`<div style="font-size:11px;color:#888;margin-top:6px;text-align:center">Con €${fmt(speseBar)} di acquisti dovresti battere almeno ${fmt(battutoAtteso)}</div>`:''}
+    </div>`;
+
+    cont.innerHTML = html;
+  } catch(e) {
+    cont.innerHTML = '<div class="empty"><div class="empty-icon">📡</div><p>Errore connessione. Riprova.</p></div>';
+  }
+}
+
+function renderSpeseFisseEditor() {
+  const fisse = getSpeseFisseAnd();
+  const tot = Object.values(fisse).reduce((a,b)=>a+b,0);
+  let html = '<div style="margin-bottom:12px">';
+  Object.entries(fisse).forEach(([k,v]) => {
+    html += `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #f0f0f0">
+      <span style="flex:1;font-size:13px;color:#555">${k}</span>
+      <input type="number" value="${v}" onchange="aggiornaFissa('${k.replace(/'/g,"\'")}',this.value)"
+        style="width:90px;padding:6px 8px;border:1.5px solid #e8e8e8;border-radius:8px;font-size:13px;text-align:right">
+      <button onclick="rimuoviFissa('${k.replace(/'/g,"\'")}'"
+        style="background:#fee;border:none;border-radius:6px;padding:4px 8px;color:#c00;cursor:pointer;font-size:12px">✕</button>
+    </div>`;
+  });
+  html += `</div>
+    <div style="display:flex;justify-content:space-between;font-size:14px;font-weight:700;padding:8px 0;border-top:2px solid var(--nero)">
+      <span>TOTALE</span><span style="color:#E65100">€${tot.toLocaleString('it-IT',{minimumFractionDigits:0})}</span>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:12px">
+      <input type="text" id="nuova-fissa-nome" placeholder="Nome voce..." style="flex:1;padding:10px;border:1.5px solid #e8e8e8;border-radius:10px;font-size:13px">
+      <input type="number" id="nuova-fissa-importo" placeholder="€" style="width:80px;padding:10px;border:1.5px solid #e8e8e8;border-radius:10px;font-size:13px">
+      <button onclick="aggiungiFissa()" class="btn-save" style="width:auto;padding:10px 14px;margin:0">+</button>
+    </div>
+    <button onclick="resetSpeseFisse()" style="margin-top:8px;width:100%;background:#f5f5f5;border:1px solid #ddd;border-radius:10px;padding:8px;font-size:12px;color:#888;cursor:pointer">↺ Ripristina valori predefiniti</button>`;
+  document.getElementById('spese-fisse-editor').innerHTML = html;
+}
+
+function aggiornaFissa(nome, valore) {
+  const fisse = getSpeseFisseAnd();
+  fisse[nome] = parseFloat(valore)||0;
+  saveSpeseFisseAnd(fisse);
+  const tot = Object.values(fisse).reduce((a,b)=>a+b,0);
+  mostraToast('✅ Salvato!','ok');
+}
+
+function rimuoviFissa(nome) {
+  if(!confirm('Rimuovere "'+nome+'"?')) return;
+  const fisse = getSpeseFisseAnd();
+  delete fisse[nome];
+  saveSpeseFisseAnd(fisse);
+  renderSpeseFisseEditor();
+  mostraToast('✅ Voce rimossa','ok');
+}
+
+function aggiungiFissa() {
+  const nome = document.getElementById('nuova-fissa-nome').value.trim();
+  const importo = parseFloat(document.getElementById('nuova-fissa-importo').value)||0;
+  if(!nome || importo <= 0) { mostraToast('❌ Inserisci nome e importo','err'); return; }
+  const fisse = getSpeseFisseAnd();
+  fisse[nome] = importo;
+  saveSpeseFisseAnd(fisse);
+  document.getElementById('nuova-fissa-nome').value='';
+  document.getElementById('nuova-fissa-importo').value='';
+  renderSpeseFisseEditor();
+  mostraToast('✅ Voce aggiunta!','ok');
+}
+
+function resetSpeseFisse() {
+  if(!confirm('Ripristinare i valori predefiniti? Le modifiche andranno perse.')) return;
+  localStorage.removeItem('sempioncino_spese_fisse');
+  renderSpeseFisseEditor();
+  mostraToast('✅ Ripristinato!','ok');
 }
 
 // INIT
