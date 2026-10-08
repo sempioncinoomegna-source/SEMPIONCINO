@@ -414,9 +414,9 @@ const ENTRATE_STRAORD={
 };
 const CAT_COLORS={'Tabacchi':'#E24B4A','Giochi':'#378ADD','Caffè':'#BA7517','Bar (forniture)':'#1D9E75','Latte':'#85B7EB','Surgelati/Gelati':'#5DCAA5','Alimentari/Bevande':'#EF9F27','Snack/Dolciumi':'#F0997B','Cartine/Sigarette elettroniche':'#D4537E','Tabacchi (trasporto)':'#E24B4A','Utenze':'#7F77DD','Macchinette/Tech':'#D4537E','Manutenzione':'#888780','Telefonia':'#639922','Commissioni POS':'#D85A30','Varie':'#B4B2A9'};
 let SPESE_FATTURE={
-  3:{'Tabacchi (trasporto/fornitura)':804.76,'Caffè':800.29,'Bar (forniture)':1278.80,'Latte':155.90,'Surgelati/Gelati':1888.32,'Alimentari/Bevande':322.88,'Snack/Dolciumi':360.67,'Utenze':736.00,'Macchinette/Tech':98.47,'Manutenzione':366.00},
-  4:{'Tabacchi (trasporto/fornitura)':1657.64,'Caffè':1013.66,'Bar (forniture)':851.60,'Latte':31.20,'Surgelati/Gelati':1473.88,'Alimentari/Bevande':252.50,'Utenze':733.00,'Macchinette/Tech':14758.44,'Telefonia':42.64,'Commissioni POS':21.96,'Varie':1845.86},
-  5:{'Tabacchi (trasporto/fornitura)':1247.18,'Latte':132.53,'Alimentari/Bevande':387.63,'Snack/Dolciumi':88.29,'Surgelati/Gelati':12.30,'Utenze':705.50,'Macchinette/Tech':713.70,'Manutenzione':736.35,'Telefonia':42.64,'Commissioni POS':13.42,'Varie':35.18},
+  3:{'Tabacchi (trasporto)':804.76,'Caffè':800.29,'Bar (forniture)':1278.80,'Latte':155.90,'Surgelati/Gelati':1888.32,'Alimentari/Bevande':322.88,'Snack/Dolciumi':360.67,'Utenze':736.00,'Macchinette/Tech':98.47,'Manutenzione':366.00},
+  4:{'Tabacchi (trasporto)':1657.64,'Caffè':1013.66,'Bar (forniture)':851.60,'Latte':31.20,'Surgelati/Gelati':1473.88,'Alimentari/Bevande':252.50,'Utenze':733.00,'Macchinette/Tech':14758.44,'Telefonia':42.64,'Commissioni POS':21.96,'Varie':1845.86},
+  5:{'Tabacchi (trasporto)':1247.18,'Latte':132.53,'Alimentari/Bevande':387.63,'Snack/Dolciumi':88.29,'Surgelati/Gelati':12.30,'Utenze':705.50,'Macchinette/Tech':713.70,'Manutenzione':736.35,'Telefonia':42.64,'Commissioni POS':13.42,'Varie':35.18},
   6:{'Alimentari/Bevande':167.56,'Commissioni POS':13.42,'Telefonia':42.64}
 };
 let ultimoMeseDati=[];
@@ -1354,6 +1354,9 @@ function aggiornaFissaImp(nome, valore) {
   const el = document.getElementById('imp-tot-fisse');
   if(el) el.innerHTML = '<span>TOTALE</span><span style="color:#E65100">'+fmt(tot)+'</span>';
   mostraToast('✅ Salvato!','ok');
+  // Ricarica andamento se visibile
+  const andCont = document.getElementById('andamento-container');
+  if(andCont && andCont.style.display !== 'none') caricaAndamento();
 }
 
 function rimuoviFissaImp(nome, btn) {
@@ -1479,6 +1482,94 @@ async function controlloFattureIncasso() {
 
 
 (function(){try{var k='sempioncino_eventi';var s=localStorage.getItem(k);var p=s?JSON.parse(s):[];if(!p.some(function(e){return e.id==='birra_w1';})){var n=[{"id": "birra_w1", "nome": "Festa Birra W1", "date": "26-27 set 2026", "incasso": 9785.8, "cassa": 2795.8, "ubify": 0, "riki": 6990.0, "costo": 5283.96, "voci_costo": [{"nome": "Birra 45 fusti", "importo": 2700.0, "fatturata": true}, {"nome": "Birra extra", "importo": 600.0, "fatturata": true}, {"nome": "Fusti Maulini CO2", "importo": 320.07, "fatturata": true}, {"nome": "Bicchieri f44", "importo": 101.89, "fatturata": true}, {"nome": "Bicchieri f47", "importo": 126.0, "fatturata": true}, {"nome": "Bicchieri f48", "importo": 36.0, "fatturata": true}, {"nome": "Erika W1", "importo": 150.0, "fatturata": false}, {"nome": "Stefania W1", "importo": 100.0, "fatturata": false}, {"nome": "Alessandro W1", "importo": 150.0, "fatturata": false}, {"nome": "Extra W1", "importo": 1000.0, "fatturata": false}], "spesa": [], "note": ""}, {"id": "birra_w2", "nome": "Festa Birra W2", "date": "3-4 ott 2026", "incasso": 7091.5, "cassa": 2591.5, "ubify": 0, "riki": 4500.0, "costo": 1250.0, "voci_costo": [{"nome": "Stefania W2", "importo": 100.0, "fatturata": false}, {"nome": "Alessandro W2", "importo": 150.0, "fatturata": false}, {"nome": "Extra W2", "importo": 1000.0, "fatturata": false}], "spesa": [], "note": ""}];localStorage.setItem(k,JSON.stringify(n.concat(p.filter(function(e){return e.id!=='birra_w1'&&e.id!=='birra_w2';}))));}}catch(ex){}})();
+
+async function caricaSpeseDaSheet(){
+  const mese=parseInt(document.getElementById('sp-mese').value);
+  const anno=document.getElementById('sp-anno').value;
+  const contS=document.getElementById('spese-container');
+  const contU=document.getElementById('utile-container');
+  contS.innerHTML='<div class="loading">⏳ Caricamento fatture...</div>';
+  contU.innerHTML='';
+  try{
+    const [resFat,resInc]=await Promise.all([
+      jsonp({action:'leggiFatture',mese,anno}),
+      jsonp({action:'leggiTutto',mese,anno})
+    ]);
+    const fatture=resFat.fatture||[];
+    
+    // Categories to include in bar costs
+    const catBar=['Caffè','Bar (forniture)','Surgelati/Gelati','Latte','Alimentari/Bevande',
+      'Snack/Dolciumi','Cartine/Sigarette elettroniche','Tabacchi (trasporto)',
+      'Utenze','Telefonia','Manutenzione','Manutenzione/Pratiche','Commissioni POS',
+      'Professionisti/Consulenze','Studio paghe','Varie','Sponsorizzazione','Formazione'];
+    const catEscludi=['Giochi/Lotterie','Tabacchi (Logista)'];
+    
+    // Group by category
+    const sfMese={};
+    fatture.forEach(f=>{
+      if(catEscludi.includes(f.categoria)) return;
+      const cat=f.categoria||'Varie';
+      sfMese[cat]=(sfMese[cat]||0)+parseFloat(f.importo);
+    });
+    Object.keys(sfMese).forEach(k=>sfMese[k]=parseFloat(sfMese[k].toFixed(2)));
+    
+    const totF=Object.values(sfMese).reduce((a,b)=>a+b,0);
+    const fisse=getSpeseFisseAnd();
+    const totFisse=Object.values(fisse).reduce((a,b)=>a+b,0);
+    const totSpese=totF+totFisse;
+    
+    // Incassi
+    const totCassa=parseFloat(resInc.totCassa)||0;
+    const totUbify=parseFloat(resInc.totUbify)||0;
+    const totRiki=parseFloat(resInc.totRik)||0;
+    const totAggi=parseFloat(resInc.totAggi)||0;
+    const incFiscale=totCassa+totUbify+totAggi;
+    const incReale=incFiscale+totRiki;
+    const utileFiscale=incFiscale-totSpese;
+    const utileReale=incReale-totSpese;
+    const colF=utileFiscale>=0?'#1D9E75':'#E24B4A';
+    const colR=utileReale>=0?'#1D4E89':'#E24B4A';
+    
+    // Render utile
+    let htmlU='<div class="card" style="padding:14px;margin-bottom:8px">';
+    htmlU+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">';
+    htmlU+='<div style="background:'+(utileFiscale>=0?'#E8F5E9':'#FFEBEE')+'';
+    htmlU+=';border-radius:12px;padding:12px;text-align:center">';
+    htmlU+='<div style="font-size:10px;font-weight:700;color:'+colF+';text-transform:uppercase">⚖️ Utile fiscale</div>';
+    htmlU+='<div style="font-size:20px;font-weight:800;color:'+colF+'">'+(utileFiscale>=0?'+':'')+fmt(utileFiscale)+'</div>';
+    htmlU+='<div style="font-size:10px;color:#888">Cassa+Ubify+Aggi−Spese</div></div>';
+    htmlU+='<div style="background:'+(utileReale>=0?'#E3F2FD':'#FFEBEE')+'';
+    htmlU+=';border-radius:12px;padding:12px;text-align:center">';
+    htmlU+='<div style="font-size:10px;font-weight:700;color:'+colR+';text-transform:uppercase">💰 Utile reale</div>';
+    htmlU+='<div style="font-size:20px;font-weight:800;color:'+colR+'">'+(utileReale>=0?'+':'')+fmt(utileReale)+'</div>';
+    htmlU+='<div style="font-size:10px;color:#888">Con Riki</div></div></div></div>';
+    contU.innerHTML=htmlU;
+    
+    // Render fatture per categoria
+    if(Object.keys(sfMese).length===0){
+      contS.innerHTML='<div class="card" style="padding:14px"><div style="color:#aaa;font-size:13px;text-align:center">Nessuna fattura per '+MESI_NOMI[mese]+' — carica le fatture nel Google Sheet</div></div>';
+      return;
+    }
+    const maxCat=Math.max(...Object.values(sfMese),1);
+    let htmlS='<div class="card" style="padding:14px">';
+    htmlS+='<div style="font-size:11px;font-weight:700;color:#E65100;text-transform:uppercase;margin-bottom:12px">💸 Fatture per categoria — '+MESI_NOMI[mese]+'</div>';
+    Object.entries(sfMese).sort((a,b)=>b[1]-a[1]).forEach(([cat,val])=>{
+      const pct=Math.round((val/maxCat)*100);
+      const col=CAT_COLORS[cat]||'#888';
+      htmlS+='<div style="margin-bottom:10px">';
+      htmlS+='<div style="display:flex;justify-content:space-between;margin-bottom:3px">';
+      htmlS+='<span style="font-size:13px;color:#444">'+cat+'</span>';
+      htmlS+='<span style="color:#E24B4A;font-weight:700">'+fmt(val)+'</span></div>';
+      htmlS+='<div class="bar-bg"><div class="bar-fill" style="width:'+pct+'%;background:'+col+'"></div></div></div>';
+    });
+    htmlS+='<div style="display:flex;justify-content:space-between;font-size:14px;font-weight:700;padding:10px 0;border-top:2px solid #eee;margin-top:4px">';
+    htmlS+='<span>TOTALE FATTURE</span><span style="color:#E65100">'+fmt(totF)+'</span></div>';
+    htmlS+='</div>';
+    contS.innerHTML=htmlS;
+  }catch(e){
+    contS.innerHTML='<div class="card" style="padding:14px"><div style="color:#888;text-align:center">❌ Errore caricamento. Riprova.</div></div>';
+  }
+}
 </script>
 
 <div id="page-eventi" class="page">
