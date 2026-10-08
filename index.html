@@ -126,6 +126,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   <button class="tab" onclick="showPage('spese',this)"><span class="tab-icon">💸</span>Spese</button>
   <button class="tab" onclick="showPage('banca',this)"><span class="tab-icon">🏦</span>Banca</button>
   <button class="tab" onclick="showPage('eventi',this)"><span class="tab-icon">🎉</span>Eventi</button>
+  <button class="tab" onclick="showPage('impostazioni',this)"><span class="tab-icon">⚙️</span>Impostazioni</button>
 </div>
 
 <!-- INSERISCI -->
@@ -267,6 +268,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       </div>
     </div>
   </div>
+  <button onclick="controlloFattureIncasso()" class="btn-save" style="margin-bottom:8px;background:#1a1410">
+    📋 CONTROLLO FATTURE / INCASSO
+  </button>
+  <div id="controllo-container" style="margin-bottom:8px"></div>
   <div id="andamento-container"><div class="loading">⏳ Caricamento...</div></div>
   <div class="card" style="padding:14px;margin-top:8px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
@@ -748,6 +753,7 @@ function showPage(id,btn){
     caricaAndamento();
     renderSpeseFisseEditor();
   }
+  if(id==='impostazioni') caricaImpostazioni();
   if(id==='eventi'){ document.getElementById('eventi-list').innerHTML='<div class="loading">⏳ Caricamento...</div>'; sincronizzaEventiSheet().then(function(){ renderEventi(); }).catch(function(){ renderEventi(); }); }
 }
 
@@ -794,7 +800,7 @@ async function salvaModificaGiorno(){
     mostraToast('✅ Salvato!','ok');
     // Alert battuto giornaliero
     const totGiornaliero = (parseFloat(document.getElementById('inp-chiusura').value)||0) + (parseFloat(document.getElementById('inp-ubify').value)||0);
-    if(!riposo && totGiornaliero > 0 && totGiornaliero < 290) {
+    if(!riposo && totGiornaliero>0 && getImpostazione('alert_giornaliero') && totGiornaliero<getImpostazione('obiettivo_giornaliero')) {
       setTimeout(()=>{ mostraToast('⚠️ TROPPO POCO! Battuto €'+totGiornaliero.toFixed(0)+' — obiettivo €280/giorno','err'); }, 1500);
     }
     // Ricarica lista
@@ -1014,7 +1020,7 @@ const SPESE_FISSE_DEFAULT = {
   'Affitto':                     1160,
   'ACOMEA':                      1770,
   'Finanziamento distributore':   315,
-  'Vono Domenico (licenza)':     1500,
+  'Vono Domenico (licenza)':     1500, // da agosto
   'Lagostina (commercialista)':   250,
   'Assicurazione':                140,
   'Utenze (stima)':              1000,
@@ -1065,13 +1071,13 @@ async function caricaAndamento() {
     // Fatture reali dal sheet
     const fatture = resFat.fatture || [];
     const fatBar = fatture.filter(f => ['Caffè','Bar (forniture)','Surgelati/Gelati','Latte',
-      'Alimentari/Bevande','Snack/Dolciumi'].includes(f.categoria))
+      'Alimentari/Bevande','Snack/Dolciumi','Cartine/Sigarette elettroniche','Tabacchi (trasporto)'].includes(f.categoria))
       .reduce((s,f) => s+parseFloat(f.importo), 0);
     const fatUtenze = fatture.filter(f => ['Utenze','Telefonia'].includes(f.categoria))
       .reduce((s,f) => s+parseFloat(f.importo), 0);
     const fatAltro = fatture.filter(f => !['Caffè','Bar (forniture)','Surgelati/Gelati','Latte',
       'Alimentari/Bevande','Snack/Dolciumi','Utenze','Telefonia',
-      'Tabacchi (trasporto)','Giochi/Lotterie'].includes(f.categoria))
+      'Tabacchi (trasporto)','Giochi/Lotterie','Cartine/Sigarette elettroniche'].includes(f.categoria))
       .reduce((s,f) => s+parseFloat(f.importo), 0);
     const fatTotale = fatBar + fatUtenze + fatAltro;
 
@@ -1089,8 +1095,8 @@ async function caricaAndamento() {
 
     // Semaforo battuto
     const pct = Math.min(100, Math.round(battuto / OBIETTIVO_BATTUTO * 100));
-    const colBatt = battuto >= 7500 ? '#1D9E75' : battuto >= 6500 ? '#F59E0B' : '#E24B4A';
-    const semBatt = battuto >= 7500 ? '🟢 PERFETTO' : battuto >= 6500 ? '🟡 ATTENZIONE' : '🔴 NON VA BENE';
+    const colBatt = battuto>=getImpostazione('soglia_verde')?'#1D9E75':battuto>=getImpostazione('soglia_gialla')?'#F59E0B':'#E24B4A';
+    const semBatt = battuto>=getImpostazione('soglia_verde')?'🟢 PERFETTO':battuto>=getImpostazione('soglia_gialla')?'🟡 ATTENZIONE':'🔴 NON VA BENE';
 
     let html = '';
 
@@ -1262,6 +1268,215 @@ function resetSpeseFisse() {
   renderSpeseFisseEditor();
   mostraToast('✅ Ripristinato!','ok');
 }
+
+// ============================================================
+// IMPOSTAZIONI
+// ============================================================
+const IMPOSTAZIONI_KEY = 'sempioncino_impostazioni';
+const IMPOSTAZIONI_DEFAULT = {
+  obiettivo_battuto: 7300,
+  soglia_verde: 7500,
+  soglia_gialla: 6500,
+  obiettivo_giornaliero: 290,
+  ricarico_atteso: 3,
+  giorni_lavorativi: 25,
+  aggi_medi: 6093,
+  fatture_bar_media: 2500,
+  alert_giornaliero: true
+};
+
+function getImpostazione(key) {
+  try {
+    const saved = JSON.parse(localStorage.getItem(IMPOSTAZIONI_KEY)||'{}');
+    return saved[key] !== undefined ? saved[key] : IMPOSTAZIONI_DEFAULT[key];
+  } catch(e) { return IMPOSTAZIONI_DEFAULT[key]; }
+}
+
+function salvaImpostazione(key, value) {
+  try {
+    const saved = JSON.parse(localStorage.getItem(IMPOSTAZIONI_KEY)||'{}');
+    if(typeof value === 'boolean') saved[key] = value;
+    else saved[key] = isNaN(parseFloat(value)) ? value : parseFloat(value);
+    localStorage.setItem(IMPOSTAZIONI_KEY, JSON.stringify(saved));
+    mostraToast('✅ Salvato!','ok');
+  } catch(e) {}
+}
+
+function resetImpostazioni() {
+  if(!confirm('Ripristinare tutte le impostazioni predefinite?')) return;
+  localStorage.removeItem(IMPOSTAZIONI_KEY);
+  caricaImpostazioni();
+  mostraToast('✅ Ripristinato!','ok');
+}
+
+function caricaImpostazioni() {
+  const ids = {
+    'set-obiettivo':'obiettivo_battuto','set-verde':'soglia_verde',
+    'set-gialla':'soglia_gialla','set-giornaliero':'obiettivo_giornaliero',
+    'set-ricarico':'ricarico_atteso','set-giorni':'giorni_lavorativi',
+    'set-aggi':'aggi_medi','set-fatture':'fatture_bar_media'
+  };
+  Object.entries(ids).forEach(function([elId,key]){
+    const el=document.getElementById(elId);
+    if(el) el.value=getImpostazione(key);
+  });
+  const chk=document.getElementById('set-alert');
+  if(chk) chk.checked=getImpostazione('alert_giornaliero');
+  renderImpSpeseFisse();
+}
+
+// Spese fisse nell'impostazioni (usa stessa funzione di andamento)
+function renderImpSpeseFisse() {
+  const cont = document.getElementById('imp-spese-fisse-editor');
+  if(!cont) return;
+  const fisse = getSpeseFisseAnd();
+  const tot = Object.values(fisse).reduce((a,b)=>a+b,0);
+  let html = '';
+  Object.entries(fisse).forEach(function([k,v],idx){
+    html += '<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #f0f0f0">';
+    html += '<span style="flex:1;font-size:13px;color:#555">'+k+'</span>';
+    html += '<input type="number" value="'+v+'" onchange="aggiornaFissaImp(\''+k.replace(/'/g,"\\'")+"',this.value)\" style=\"width:90px;padding:6px;border:1.5px solid #e8e8e8;border-radius:8px;font-size:13px;text-align:right\">";
+    html += '<button onclick="rimuoviFissaImp(\''+k.replace(/'/g,"\\'")+'\',this)" style="background:#fee;border:none;border-radius:6px;padding:4px 8px;color:#c00;cursor:pointer">✕</button>';
+    html += '</div>';
+  });
+  html += '<div style="display:flex;justify-content:space-between;font-size:14px;font-weight:700;padding:8px 0;border-top:2px solid #eee;margin-top:4px" id="imp-tot-fisse"><span>TOTALE</span><span style="color:#E65100">'+fmt(tot)+'</span></div>';
+  html += '<div style="display:flex;gap:8px;margin-top:10px"><input type="text" id="imp-nuova-nome" placeholder="Nome voce..." style="flex:1;padding:9px;border:1.5px solid #e8e8e8;border-radius:10px;font-size:13px"><input type="number" id="imp-nuova-importo" placeholder="€" style="width:80px;padding:9px;border:1.5px solid #e8e8e8;border-radius:10px;font-size:13px"></div>';
+  html += '<button onclick="aggiungiFissaImp()" class="btn-save" style="margin-top:8px">+ Aggiungi voce</button>';
+  html += '<button onclick="resetFisseImp()" style="margin-top:8px;width:100%;background:#f5f5f5;border:1px solid #ddd;border-radius:10px;padding:8px;font-size:12px;color:#888;cursor:pointer">↺ Ripristina predefinite</button>';
+  cont.innerHTML = html;
+}
+
+function aggiornaFissaImp(nome, valore) {
+  const fisse = getSpeseFisseAnd();
+  fisse[nome] = parseFloat(valore)||0;
+  saveSpeseFisseAnd(fisse);
+  const tot = Object.values(fisse).reduce((a,b)=>a+b,0);
+  const el = document.getElementById('imp-tot-fisse');
+  if(el) el.innerHTML = '<span>TOTALE</span><span style="color:#E65100">'+fmt(tot)+'</span>';
+  mostraToast('✅ Salvato!','ok');
+}
+
+function rimuoviFissaImp(nome, btn) {
+  if(!confirm('Rimuovere "'+nome+'"?')) return;
+  const fisse = getSpeseFisseAnd();
+  delete fisse[nome];
+  saveSpeseFisseAnd(fisse);
+  renderImpSpeseFisse();
+  mostraToast('✅ Rimossa','ok');
+}
+
+function aggiungiFissaImp() {
+  const nome = document.getElementById('imp-nuova-nome').value.trim();
+  const importo = parseFloat(document.getElementById('imp-nuova-importo').value)||0;
+  if(!nome||importo<=0){mostraToast('❌ Inserisci nome e importo','err');return;}
+  const fisse = getSpeseFisseAnd();
+  fisse[nome] = importo;
+  saveSpeseFisseAnd(fisse);
+  document.getElementById('imp-nuova-nome').value='';
+  document.getElementById('imp-nuova-importo').value='';
+  renderImpSpeseFisse();
+  mostraToast('✅ Aggiunta!','ok');
+}
+
+function resetFisseImp() {
+  if(!confirm('Ripristinare le spese fisse predefinite?')) return;
+  localStorage.removeItem('sempioncino_spese_fisse');
+  renderImpSpeseFisse();
+  mostraToast('✅ Ripristinato!','ok');
+}
+
+// ============================================================
+// CONTROLLO FATTURE / INCASSO
+// ============================================================
+// Fornitori con mese sfasato (fattura mese X = consumo mese X-1)
+const FORNITORI_SFASATI = ['Caffè Comero','CAFFE COMERO','Idealgel','IDEALGEL','Parmalat','PARMALAT','Grandi Fratelli','GRANDI FRATELLI'];
+
+async function controlloFattureIncasso() {
+  const mese = parseInt(document.getElementById('and-mese').value);
+  const anno = parseInt(document.getElementById('and-anno').value);
+  const cont = document.getElementById('controllo-container');
+  const ricarico = getImpostazione('ricarico_atteso');
+  cont.innerHTML = '<div class="loading">⏳ Analisi in corso...</div>';
+  try {
+    // Leggi incassi mese corrente
+    const resInc = await jsonp({action:'leggiTutto', mese, anno});
+    const battuto = (parseFloat(resInc.totCassa)||0) + (parseFloat(resInc.totUbify)||0);
+
+    // Leggi fatture mese corrente + mese successivo (per sfasati)
+    const meseSuc = mese === 11 ? 0 : mese+1;
+    const annoSuc = mese === 11 ? anno+1 : anno;
+    const [resFat, resFatSuc] = await Promise.all([
+      jsonp({action:'leggiFatture', mese, anno}),
+      jsonp({action:'leggiFatture', mese:meseSuc, anno:annoSuc})
+    ]);
+
+    const catBar = ['Caffè','Bar (forniture)','Surgelati/Gelati','Latte','Alimentari/Bevande','Snack/Dolciumi','Cartine/Sigarette elettroniche','Tabacchi (trasporto)'];
+    const fatture = resFat.fatture || [];
+    const fattureSuc = resFatSuc.fatture || [];
+
+    // Fatture correnti (escludi sfasati)
+    const fatNorm = fatture.filter(f => !FORNITORI_SFASATI.some(s => (f.fornitore||'').toUpperCase().includes(s.toUpperCase())));
+    // Fatture mese successivo degli sfasati (appartengono a questo mese)
+    const fatSfasate = fattureSuc.filter(f => FORNITORI_SFASATI.some(s => (f.fornitore||'').toUpperCase().includes(s.toUpperCase())));
+
+    const tuttefatture = [...fatNorm, ...fatSfasate];
+    const fatBar = {};
+    let totFatBar = 0;
+    catBar.forEach(function(cat){
+      const v = tuttefatture.filter(f=>f.categoria===cat).reduce((s,f)=>s+parseFloat(f.importo),0);
+      if(v>0){fatBar[cat]=v;totFatBar+=v;}
+    });
+
+    const usaStima = totFatBar === 0;
+    if(usaStima) totFatBar = getImpostazione('fatture_bar_media');
+
+    const battutoAtteso = totFatBar * ricarico;
+    const scarto = battuto - battutoAtteso;
+    const inLinea = scarto >= -500;
+    const col = inLinea ? '#1D9E75' : '#E24B4A';
+    const sem = inLinea ? '✅ IN LINEA' : '⚠️ FUORI LINEA';
+
+    let html = '<div class="card" style="padding:14px;border:2px solid '+col+'">';
+    html += '<div style="font-size:11px;font-weight:700;color:'+col+';text-transform:uppercase;margin-bottom:12px">📋 CONTROLLO FATTURE / INCASSO</div>';
+
+    // Fatture dettaglio
+    html += '<div style="margin-bottom:10px"><div style="font-size:12px;font-weight:700;color:#555;margin-bottom:6px">Costo materie prime bar:</div>';
+    if(!usaStima) {
+      Object.entries(fatBar).forEach(function([cat,v]){
+        const sfasata = fattureSuc.some(f=>f.categoria===cat&&FORNITORI_SFASATI.some(s=>(f.fornitore||'').toUpperCase().includes(s.toUpperCase())));
+        html += '<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid #f0f0f0">';
+        html += '<span style="color:#555">'+cat+(sfasata?' <span style="font-size:10px;color:#888">(fatt. mese succ.)</span>':'')+'</span>';
+        html += '<span style="font-weight:600">'+fmt(v)+'</span></div>';
+      });
+    } else {
+      html += '<div style="font-size:12px;color:#aaa;padding:4px 0">Fatture non caricate — stima €'+getImpostazione('fatture_bar_media').toLocaleString('it-IT')+'</div>';
+    }
+    html += '<div style="display:flex;justify-content:space-between;font-size:14px;font-weight:700;padding:6px 0;border-top:2px solid #eee;margin-top:4px">';
+    html += '<span>TOTALE FATTURE BAR</span><span style="color:#E65100">'+fmt(totFatBar)+'</span></div></div>';
+
+    // X ricarico
+    html += '<div style="background:#f9f6f0;border-radius:10px;padding:12px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center">';
+    html += '<span style="font-size:15px;font-weight:600">'+fmt(totFatBar)+' × '+ricarico+'</span>';
+    html += '<span style="font-size:22px;font-weight:800;color:#8B6914">= '+fmt(battutoAtteso)+'</span></div>';
+
+    // Confronto
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">';
+    html += '<div style="background:#f5f5f5;border-radius:10px;padding:10px;text-align:center"><div style="font-size:10px;color:#888;margin-bottom:4px">BATTUTO ATTESO</div><div style="font-size:16px;font-weight:700">'+fmt(battutoAtteso)+'</div></div>';
+    html += '<div style="background:#f5f5f5;border-radius:10px;padding:10px;text-align:center"><div style="font-size:10px;color:#888;margin-bottom:4px">BATTUTO REALE</div><div style="font-size:16px;font-weight:700;color:'+col+'">'+fmt(battuto)+'</div></div></div>';
+
+    // Risultato
+    html += '<div style="background:'+(inLinea?'#E8F5E9':'#FFEBEE')+';border-radius:10px;padding:12px;text-align:center">';
+    html += '<div style="font-size:16px;font-weight:800;color:'+col+'">'+sem+'</div>';
+    html += '<div style="font-size:12px;color:'+col+';margin-top:4px">'+(scarto>=0?'Battuto superiore di '+fmt(Math.abs(scarto)):'Battuto inferiore di '+fmt(Math.abs(scarto)))+' rispetto alle fatture ×'+ricarico+'</div>';
+    if(!inLinea) html += '<div style="font-size:11px;color:#888;margin-top:4px">Con '+fmt(totFatBar)+' di acquisti dovresti battere almeno '+fmt(battutoAtteso)+'</div>';
+    html += '</div></div>';
+
+    cont.innerHTML = html;
+  } catch(e) {
+    cont.innerHTML = '<div class="empty"><div class="empty-icon">📡</div><p>Errore. Riprova.</p></div>';
+  }
+}
+
 
 // INIT
 const inpData=document.getElementById('inp-data');
@@ -1910,7 +2125,44 @@ renderSpeseFisse(new Date().getMonth());
   </div>
 </div>
 
-<div id="modal-giorno" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:999;align-items:flex-end;justify-content:center">
+<div id="page-impostazioni" class="page">
+  <div class="card" style="padding:14px;margin-bottom:8px">
+    <div class="card-title">🎯 Soglie battuto mensile</div>
+    <div class="field"><label>Obiettivo mensile (€)</label>
+      <input type="number" id="set-obiettivo" inputmode="decimal" onchange="salvaImpostazione('obiettivo_battuto',this.value)"></div>
+    <div class="field"><label>🟢 Verde — battuto da (€)</label>
+      <input type="number" id="set-verde" inputmode="decimal" onchange="salvaImpostazione('soglia_verde',this.value)"></div>
+    <div class="field"><label>🟡 Giallo — battuto da (€)</label>
+      <input type="number" id="set-gialla" inputmode="decimal" onchange="salvaImpostazione('soglia_gialla',this.value)"></div>
+    <div class="field"><label>⚠️ Alert giornaliero sotto (€)</label>
+      <input type="number" id="set-giornaliero" inputmode="decimal" onchange="salvaImpostazione('obiettivo_giornaliero',this.value)"></div>
+  </div>
+  <div class="card" style="padding:14px;margin-bottom:8px">
+    <div class="card-title">📊 Parametri calcolo</div>
+    <div class="field"><label>Ricarico atteso bar (×)</label>
+      <input type="number" id="set-ricarico" step="0.1" inputmode="decimal" onchange="salvaImpostazione('ricarico_atteso',this.value)"></div>
+    <div class="field"><label>Giorni lavorativi mensili</label>
+      <input type="number" id="set-giorni" inputmode="decimal" onchange="salvaImpostazione('giorni_lavorativi',this.value)"></div>
+    <div class="field"><label>Aggi medi mensili (€)</label>
+      <input type="number" id="set-aggi" inputmode="decimal" onchange="salvaImpostazione('aggi_medi',this.value)"></div>
+    <div class="field"><label>Fatture bar stima (€)</label>
+      <input type="number" id="set-fatture" inputmode="decimal" onchange="salvaImpostazione('fatture_bar_media',this.value)"></div>
+  </div>
+  <div class="card" style="padding:14px;margin-bottom:8px">
+    <div class="card-title">💸 Spese fisse mensili</div>
+    <div id="imp-spese-fisse-editor"></div>
+  </div>
+  <div class="card" style="padding:14px;margin-bottom:8px">
+    <div class="card-title">🔔 Notifiche</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0">
+      <label style="font-size:14px">Alert battuto basso giornaliero</label>
+      <input type="checkbox" id="set-alert" onchange="salvaImpostazione('alert_giornaliero',this.checked)" style="width:20px;height:20px;cursor:pointer">
+    </div>
+  </div>
+  <button onclick="resetImpostazioni()" style="width:100%;padding:12px;background:#f5f5f5;border:1px solid #ddd;border-radius:12px;font-size:13px;color:#888;cursor:pointer;margin-bottom:16px">↺ Ripristina impostazioni predefinite</button>
+</div>
+
+<div id="modal-giorno"  style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:999;align-items:flex-end;justify-content:center">
   <div style="background:#fff;border-radius:20px 20px 0 0;padding:24px;width:100%;max-height:85vh;overflow-y:auto">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
       <div style="font-size:16px;font-weight:800;color:#1a1410" id="modal-giorno-title">Modifica giornata</div>
@@ -2116,6 +2368,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   <button class="tab" onclick="showPage('spese',this)"><span class="tab-icon">💸</span>Spese</button>
   <button class="tab" onclick="showPage('banca',this)"><span class="tab-icon">🏦</span>Banca</button>
   <button class="tab" onclick="showPage('eventi',this)"><span class="tab-icon">🎉</span>Eventi</button>
+  <button class="tab" onclick="showPage('impostazioni',this)"><span class="tab-icon">⚙️</span>Impostazioni</button>
 </div>
 
 <!-- INSERISCI -->
@@ -2257,6 +2510,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       </div>
     </div>
   </div>
+  <button onclick="controlloFattureIncasso()" class="btn-save" style="margin-bottom:8px;background:#1a1410">
+    📋 CONTROLLO FATTURE / INCASSO
+  </button>
+  <div id="controllo-container" style="margin-bottom:8px"></div>
   <div id="andamento-container"><div class="loading">⏳ Caricamento...</div></div>
   <div class="card" style="padding:14px;margin-top:8px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
@@ -2367,1531 +2624,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 
 <div class="toast" id="toast"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script>
-const SCRIPT_URL='https://script.google.com/macros/s/AKfycbwFeeT_7Z-FpH1F1D8gjfyvDVXhZryTc2VJ8uLegYTQR6E_ch4cDc1VXIoIKnG19h_o/exec';
-const GIORNI=['domenica','lunedì','martedì','mercoledì','giovedì','venerdì','sabato'];
-const MESI_NOMI=['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
-const MESE_INIZIO_POS=4;
-const MESI_TRIM=[2,5,8,11];
-const SPESE_FISSE=[
-  {nome:'Stefania (stipendio)',icona:'👤',importo:1406},
-  {nome:'Sandro (stipendio)',icona:'👤',importo:1800},
-  {nome:'Affitto (Mendicino Teresa)',icona:'🏠',importo:1000},
-  {nome:'Vono Domenico (licenza)',icona:'📋',importo:1000},
-  {nome:'Restituzione Cinzia',icona:'💰',importo:1000},
-  {nome:'Fondo accantonamento ACOMEA',icona:'🏦',importo:1770},
-  {nome:'Tasse/F24',icona:'🏛️',importo:828},
-  {nome:'Utenze (energia/acqua)',icona:'💡',importo:544},
-  {nome:'Assicurazione',icona:'🛡️',importo:120},
-  {nome:'Telefonia (Fastweb)',icona:'📱',importo:43},
-  {nome:'ITagency (tabacchi)',icona:'🚬',importo:267},
-  {nome:'Finanziamento distributore',icona:'💳',importo:315},
-  {nome:'Studio paghe (Colobara)',icona:'📊',importo:202},
-];
-// Vono aumenta a 1500 da agosto 2026 (mese indice 7)
-const VONO_AUG = 1500;
-const TOT_FISSE=SPESE_FISSE.reduce((a,b)=>a+b.importo,0);
-const SPESE_TRIM_VOCI=[{nome:'TFR Stefania',icona:'💼',importo:500},{nome:'Contributi Sandro + Morris',icona:'👥',importo:2000}];
-const TOT_TRIM=SPESE_TRIM_VOCI.reduce((a,b)=>a+b.importo,0);
-// Entrate straordinarie per mese (indice mese+1)
-const ENTRATE_STRAORD={
-  4: [{nome:'Finanziamento distributore sigarette',icona:'🏦',importo:12740}]
-};
-const CAT_COLORS={'Tabacchi':'#E24B4A','Giochi':'#378ADD','Caffè':'#BA7517','Bar (forniture)':'#1D9E75','Latte':'#85B7EB','Surgelati/Gelati':'#5DCAA5','Alimentari/Bevande':'#EF9F27','Snack/Dolciumi':'#F0997B','Utenze':'#7F77DD','Macchinette/Tech':'#D4537E','Manutenzione':'#888780','Telefonia':'#639922','Commissioni POS':'#D85A30','Varie':'#B4B2A9'};
-let SPESE_FATTURE={
-  3:{'Tabacchi (trasporto/fornitura)':804.76,'Caffè':800.29,'Bar (forniture)':1278.80,'Latte':155.90,'Surgelati/Gelati':1888.32,'Alimentari/Bevande':322.88,'Snack/Dolciumi':360.67,'Utenze':736.00,'Macchinette/Tech':98.47,'Manutenzione':366.00},
-  4:{'Tabacchi (trasporto/fornitura)':1657.64,'Caffè':1013.66,'Bar (forniture)':851.60,'Latte':31.20,'Surgelati/Gelati':1473.88,'Alimentari/Bevande':252.50,'Utenze':733.00,'Macchinette/Tech':14758.44,'Telefonia':42.64,'Commissioni POS':21.96,'Varie':1845.86},
-  5:{'Tabacchi (trasporto/fornitura)':1247.18,'Latte':132.53,'Alimentari/Bevande':387.63,'Snack/Dolciumi':88.29,'Surgelati/Gelati':12.30,'Utenze':705.50,'Macchinette/Tech':713.70,'Manutenzione':736.35,'Telefonia':42.64,'Commissioni POS':13.42,'Varie':35.18},
-  6:{'Alimentari/Bevande':167.56,'Commissioni POS':13.42,'Telefonia':42.64}
-};
-let ultimoMeseDati=[];
-let confViewAttivo='anno';
 
-function catBanca(op){
-  const u=String(op).toUpperCase();
-  if(u.includes('POS BAR')||u.includes('ACCREDITO AL LORDO'))return 'Entrate POS';
-  if(u.includes('VERSAMENTO CONTANTI'))return 'Versamenti contanti';
-  if(u.includes('BRIGHTSTAR')||u.includes('EURO SLOT'))return 'Aggi macchinette';
-  if(u.includes('LOGISTA ITALIA'))return 'Tabacchi (Logista)';
-  if(u.includes('LIS PAY')||u.includes('LIS HOLDING'))return 'Giochi (LIS)';
-  if(u.includes('SISAL'))return u.includes('BONIFICO DISPOSTO DA')?'Aggi (Sisal)':'Giochi (Sisal)';
-  if(u.includes('LOTTERIE')||u.includes('BRIGHTSTAR'))return 'Aggi lotto';
-  if(u.includes('COMMISSIONI TRANSATO')||u.includes('CANONE SPESE POS'))return 'Commissioni POS';
-  if(u.includes('COMMISSIONE PAGAMENTO')||u.includes('PAGAMENTO ADUE'))return 'Pagamenti fornitori';
-  if(u.includes('IDEALGEL'))return 'Surgelati/Gelati';
-  if(u.includes('GRANDI FRATELLI'))return 'Bar (forniture)';
-  if(u.includes('PARMALAT'))return 'Latte';
-  if(u.includes('CAFFE')||u.includes('COMERO'))return 'Caffè';
-  if(u.includes('FASTWEB'))return 'Telefonia';
-  if(u.includes('ENERGIA')||u.includes('ACQUA'))return 'Utenze';
-  if(u.includes('ITAGENCY')||u.includes('UBIFY')||u.includes('LASERVIDEO'))return 'Macchinette/Tech';
-  if(u.includes('AFFITTO')||u.includes('LOCAZIONE'))return 'Affitto';
-  if(u.includes('F24')||u.includes('INPS')||u.includes('AGENZIA ENTRATE'))return 'Tasse/Contributi';
-  if(u.includes('STIPENDIO')||u.includes('MENDICINO')||u.includes('SANDRO')||u.includes('MORRIS'))return 'Personale';
-  if(u.includes('BONIFICO DISPOSTO A'))return 'Bonifici uscita';
-  if(u.includes('BONIFICO DISPOSTO DA'))return 'Bonifici entrata';
-  return null;
-}
-
-const CAT_BANCA_COLORI={
-  'Entrate POS':'#1D9E75',
-  'Versamenti contanti':'#378ADD',
-  'Aggi macchinette':'#5DCAA5',
-  'Aggi (Sisal)':'#85B7EB',
-  'Tabacchi (Logista)':'#E24B4A',
-  'Giochi (LIS)':'#D4537E',
-  'Giochi (Sisal)':'#F0997B',
-  'Commissioni POS':'#888780',
-  'Pagamenti fornitori':'#BA7517',
-  'Surgelati/Gelati':'#5DCAA5',
-  'Bar (forniture)':'#1D9E75',
-  'Latte':'#85B7EB',
-  'Caffè':'#BA7517',
-  'Telefonia':'#639922',
-  'Utenze':'#7F77DD',
-  'Macchinette/Tech':'#D4537E',
-  'Affitto':'#E24B4A',
-  'Tasse/Contributi':'#791F1F',
-  'Personale':'#A32D2D',
-  'Bonifici uscita':'#888',
-  'Bonifici entrata':'#3B6D11'
-};
-
-let tuttiBancaMovimenti=[];
-
-async function inizializzaBanca(){
-  // Carica movimenti salvati dal Google Sheet
-  const cont=document.getElementById('banca-container');
-  cont.innerHTML='<div class="loading">⏳ Caricamento movimenti bancari...</div>';
-  try{
-    const res=await jsonp({action:'leggiBanca'});
-    if(res.movimenti&&res.movimenti.length>0){
-      tuttiBancaMovimenti=res.movimenti.map(m=>({
-        data:new Date(m.data+'T12:00:00'),
-        op:m.op,cat:m.cat,tipo:m.tipo,
-        importo:parseFloat(m.importo)||0
-      }));
-      document.getElementById('banca-filtri').style.display='block';
-      document.getElementById('banca-file-info').textContent=tuttiBancaMovimenti.length+' movimenti salvati ('+new Date(res.minData+'T12:00:00').toLocaleDateString('it-IT')+' — '+new Date(res.maxData+'T12:00:00').toLocaleDateString('it-IT')+')';
-      // Set default dates to current month
-      const oggi=new Date();
-      const primoMese=new Date(oggi.getFullYear(),oggi.getMonth(),1);
-      const ultimoMese=new Date(oggi.getFullYear(),oggi.getMonth()+1,0);
-      const fmtDate=d=>{const y=d.getFullYear();const m=String(d.getMonth()+1).padStart(2,'0');const g=String(d.getDate()).padStart(2,'0');return y+'-'+m+'-'+g;};
-      document.getElementById('banca-dal').value=fmtDate(primoMese);
-      document.getElementById('banca-al').value=fmtDate(ultimoMese);
-      filtraBanca();
-    }else{
-      cont.innerHTML='<div class="empty"><div class="empty-icon">🏦</div><p>Nessun movimento salvato.<br>Carica il file Excel per iniziare.</p></div>';
-    }
-  }catch(e){
-    cont.innerHTML='<div class="empty"><div class="empty-icon">🏦</div><p>Carica il file Excel per vedere i movimenti</p></div>';
-  }
-}
-
-function caricaBanca(input){
-  const file=input.files[0];if(!file)return;
-  const reader=new FileReader();
-  reader.onload=function(e){
-    try{
-      const wb=XLSX.read(e.target.result,{type:'binary'});
-      const ws=wb.Sheets[wb.SheetNames[0]];
-      const raw=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
-      
-      let headerIdx=-1;
-      for(let i=0;i<raw.length;i++){
-        if(raw[i].includes('Data')&&raw[i].includes('Operazione')&&raw[i].includes('Importo')){
-          headerIdx=i;break;
-        }
-      }
-      if(headerIdx<0){mostraToast('❌ Formato non riconosciuto','err');return;}
-      
-      const headers=raw[headerIdx];
-      const idxData=headers.indexOf('Data');
-      const idxOp=headers.indexOf('Operazione');
-      const idxImporto=headers.indexOf('Importo');
-      
-      tuttiBancaMovimenti=[];
-      for(let i=headerIdx+1;i<raw.length;i++){
-        const row=raw[i];
-        const importo=parseFloat(String(row[idxImporto]).replace(',','.'));
-        if(isNaN(importo))continue;
-        let dataVal=row[idxData];
-        let data=null;
-        if(typeof dataVal==='number'){
-          // Excel serial date - use UTC to avoid timezone issues
-          const ms=Math.round((dataVal-25569)*86400*1000);
-          data=new Date(ms);
-          // Normalize to midnight local time
-          data=new Date(data.getUTCFullYear(),data.getUTCMonth(),data.getUTCDate());
-        }else if(dataVal){
-          const s=String(dataVal);
-          // Handle YYYY-MM-DD format
-          if(s.match(/^\d{4}-\d{2}-\d{2}/)){
-            const parts=s.slice(0,10).split('-');
-            data=new Date(parseInt(parts[0]),parseInt(parts[1])-1,parseInt(parts[2]));
-          }else{
-            data=new Date(dataVal);
-          }
-        }
-        if(!data||isNaN(data.getTime()))continue;
-        const op=String(row[idxOp]||'');
-        const cat=catBanca(op)||'Altro';
-        tuttiBancaMovimenti.push({data,op,importo,cat});
-      }
-      
-      if(tuttiBancaMovimenti.length===0){
-        mostraToast('❌ Nessun movimento trovato','err');
-        input.value='';return;
-      }
-      
-      // Set date range from data
-      const dates=tuttiBancaMovimenti.map(m=>m.data).sort((a,b)=>a-b);
-      const minDate=dates[0];
-      const maxDate=dates[dates.length-1];
-      const fmtDate=d=>{
-        const y=d.getFullYear();
-        const m=String(d.getMonth()+1).padStart(2,'0');
-        const g=String(d.getDate()).padStart(2,'0');
-        return y+'-'+m+'-'+g;
-      };
-      document.getElementById('banca-dal').value=fmtDate(minDate);
-      document.getElementById('banca-al').value=fmtDate(maxDate);
-      document.getElementById('banca-filtri').style.display='block';
-      document.getElementById('banca-file-info').textContent=tuttiBancaMovimenti.length+' movimenti dal '+minDate.toLocaleDateString('it-IT')+' al '+maxDate.toLocaleDateString('it-IT');
-      
-      mostraToast('✅ Caricati '+tuttiBancaMovimenti.length+' movimenti — salvataggio in corso...','ok');
-      filtraBanca();
-      // Save to Google Sheet
-      salvaBancaSheet(tuttiBancaMovimenti);
-    }catch(err){
-      console.error(err);
-      mostraToast('❌ Errore lettura file','err');
-    }
-    input.value='';
-  };
-  reader.readAsBinaryString(file);
-}
-
-async function salvaBancaSheet(movimenti){
-  const dates=movimenti.map(m=>m.data).sort((a,b)=>a-b);
-  const dal=dates[0].toISOString().slice(0,10);
-  const al=dates[dates.length-1].toISOString().slice(0,10);
-  const payload=movimenti.map(m=>({
-    data:m.data.toISOString().slice(0,10),
-    op:m.op.slice(0,150),
-    cat:m.cat,
-    tipo:m.importo>0?'ENTRATA':'USCITA',
-    importo:m.importo
-  }));
-  // Save in batches of 50 to avoid URL length limits
-  const batchSize=50;
-  const total=payload.length;
-  let saved=0;
-  mostraToast('⏳ Salvataggio in corso...','ok');
-  try{
-    // First clear the period
-    await jsonp({action:'salvaBanca',dal,al,movimenti:JSON.stringify([]),clear:'1'});
-    // Then save in batches
-    for(let i=0;i<payload.length;i+=batchSize){
-      const batch=payload.slice(i,i+batchSize);
-      const res=await jsonp({action:'salvaBanca',dal,al,movimenti:JSON.stringify(batch),clear:'0'});
-      if(res.ok)saved+=batch.length;
-    }
-    mostraToast('✅ '+saved+' movimenti salvati su Google Sheet!','ok');
-    // Update file info
-    document.getElementById('banca-file-info').textContent=total+' movimenti salvati sul cloud ('+new Date(dal+'T12:00:00').toLocaleDateString('it-IT')+' — '+new Date(al+'T12:00:00').toLocaleDateString('it-IT')+')';
-  }catch(e){
-    mostraToast('⚠️ Errore salvataggio sul cloud','err');
-  }
-}
-
-let bancaFiltrati=[];
-
-function cercaBanca(query){
-  const q=query.toLowerCase().trim();
-  if(!q){mostraToast('❌ Inserisci una parola da cercare','err');return;}
-  // Cerca in TUTTI i movimenti, non solo quelli del periodo
-  const risultati=tuttiBancaMovimenti.filter(m=>
-    m.op.toLowerCase().includes(q)||
-    m.cat.toLowerCase().includes(q)
-  );
-  const cont=document.getElementById('banca-container');
-  if(risultati.length===0){
-    cont.innerHTML='<div class="empty"><div class="empty-icon">🔍</div><p>Nessun movimento trovato per "'+query+'"</p></div>';
-    return;
-  }
-  renderBanca(risultati, 'Ricerca: "'+query+'" — '+risultati.length+' risultati');
-}
-
-function filtraBanca(){
-  const dal=new Date(document.getElementById('banca-dal').value+'T00:00:00');
-  const al=new Date(document.getElementById('banca-al').value+'T23:59:59');
-  if(!dal||!al||isNaN(dal)||isNaN(al)){mostraToast('❌ Inserisci le date','err');return;}
-  const filtrati=tuttiBancaMovimenti.filter(m=>m.data>=dal&&m.data<=al);
-  if(filtrati.length===0){
-    document.getElementById('banca-container').innerHTML='<div class="empty"><div class="empty-icon">📭</div><p>Nessun movimento nel periodo selezionato</p></div>';
-    return;
-  }
-  const label=dal.toLocaleDateString('it-IT')+' → '+al.toLocaleDateString('it-IT');
-  bancaFiltrati=filtrati;
-  renderBanca(filtrati, label);
-  // Reset search
-  const s=document.getElementById('banca-search');
-  if(s)s.value='';
-}
-
-function renderBanca(movimenti, label){
-  const cont=document.getElementById('banca-container');
-  const totEntrate=movimenti.filter(m=>m.importo>0).reduce((s,m)=>s+m.importo,0);
-  const totUscite=movimenti.filter(m=>m.importo<0).reduce((s,m)=>s+m.importo,0);
-  const saldo=totEntrate+totUscite;
-  
-  // Group by category
-  const cats={};
-  movimenti.forEach(m=>{
-    if(!cats[m.cat])cats[m.cat]={tot:0,n:0,tipo:m.importo>0?'E':'U'};
-    cats[m.cat].tot+=m.importo;
-    cats[m.cat].n++;
-    if(m.importo>0)cats[m.cat].tipo='E';
-  });
-  
-  const entrate=Object.entries(cats).filter(([,v])=>v.tot>0).sort((a,b)=>b[1].tot-a[1].tot);
-  const uscite=Object.entries(cats).filter(([,v])=>v.tot<0).sort((a,b)=>a[1].tot-b[1].tot);
-  
-  let html='<div class="card" style="padding:12px"><div class="stat-grid">';
-  html+='<div class="stat positive"><div class="stat-label">Entrate</div><div class="stat-value">'+fmt(totEntrate)+'</div></div>';
-  html+='<div class="stat danger"><div class="stat-label">Uscite</div><div class="stat-value">'+fmt(Math.abs(totUscite))+'</div></div>';
-  html+='<div class="stat '+(saldo>=0?'positive':'danger')+' full"><div class="stat-label">SALDO '+label.toUpperCase()+'</div><div class="stat-value">'+(saldo>=0?'+':'')+fmt(saldo)+'</div></div>';
-  html+='</div></div>';
-  
-  // Entrate per categoria
-  html+='<div class="card"><div class="card-title">📈 Entrate per centro di costo</div>';
-  const maxE=Math.max(...entrate.map(([,v])=>v.tot),1);
-  entrate.forEach(([cat,v])=>{
-    const pct=Math.round((v.tot/maxE)*100);
-    const col=CAT_BANCA_COLORI[cat]||'#1D9E75';
-    html+='<div style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;margin-bottom:3px"><span style="font-size:13px;color:#444">'+cat+'<span style="color:#888;font-size:11px"> ('+v.n+' mov.)</span></span><span style="color:#3B6D11;font-weight:700">'+fmt(v.tot)+'</span></div><div class="bar-bg"><div class="bar-fill" style="width:'+pct+'%;background:'+col+'"></div></div></div>';
-  });
-  html+='</div>';
-  
-  // Uscite per categoria
-  html+='<div class="card"><div class="card-title">📉 Uscite per centro di costo</div>';
-  const maxU=Math.max(...uscite.map(([,v])=>Math.abs(v.tot)),1);
-  uscite.forEach(([cat,v])=>{
-    const pct=Math.round((Math.abs(v.tot)/maxU)*100);
-    const col=CAT_BANCA_COLORI[cat]||'#E24B4A';
-    html+='<div style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;margin-bottom:3px"><span style="font-size:13px;color:#444">'+cat+'<span style="color:#888;font-size:11px"> ('+v.n+' mov.)</span></span><span style="color:#E24B4A;font-weight:700">'+fmt(Math.abs(v.tot))+'</span></div><div class="bar-bg"><div class="bar-fill" style="width:'+pct+'%;background:'+col+'"></div></div></div>';
-  });
-  html+='</div>';
-  
-  // Lista movimenti
-  html+='<div class="card"><div class="card-title">Tutti i movimenti</div>';
-  const sorted=[...movimenti].sort((a,b)=>b.data-a.data);
-  sorted.forEach(m=>{
-    const col=m.importo>0?'#3B6D11':'#E24B4A';
-    const catCol=CAT_BANCA_COLORI[m.cat]||'#888';
-    html+='<div style="padding:8px 0;border-bottom:1px solid #f5f5f5"><div style="display:flex;justify-content:space-between;align-items:flex-start"><div style="flex:1"><div style="font-size:12px;color:#888">'+m.data.toLocaleDateString('it-IT')+'</div><div style="font-size:13px;color:#444;margin:2px 0">'+m.op.slice(0,60)+(m.op.length>60?'...':'')+'</div><span style="font-size:10px;background:'+catCol+'22;color:'+catCol+';padding:1px 6px;border-radius:10px;font-weight:600">'+m.cat+'</span></div><div style="font-size:14px;font-weight:700;color:'+col+';margin-left:10px;white-space:nowrap">'+(m.importo>0?'+':'')+fmt(m.importo)+'</div></div></div>';
-  });
-  html+='</div>';
-  
-  cont.innerHTML=html;
-}
-
-function fmt(n){return '€'+parseFloat(n||0).toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2});}
-function totSpeseMese(mese){const sf=SPESE_FATTURE[mese+1]||{};return Object.values(sf).reduce((a,b)=>a+b,0)+TOT_FISSE+(MESI_TRIM.includes(mese)?TOT_TRIM:0);}
-
-function jsonp(params){
-  return new Promise((resolve,reject)=>{
-    const cb='cb_'+Date.now()+'_'+Math.random().toString(36).slice(2);
-    const to=setTimeout(()=>{delete window[cb];reject(new Error('Timeout'));},60000);
-    window[cb]=d=>{clearTimeout(to);delete window[cb];resolve(d);};
-    const qs=Object.entries({...params,callback:cb}).map(([k,v])=>encodeURIComponent(k)+'='+encodeURIComponent(String(v))).join('&');
-    const s=document.createElement('script');
-    s.src=SCRIPT_URL+'?'+qs;
-    s.onerror=()=>{clearTimeout(to);delete window[cb];s.remove();reject(new Error('Errore'));};
-    document.head.appendChild(s);
-    setTimeout(()=>{if(s.parentNode)s.remove();},61000);
-  });
-}
-
-function mostraToast(msg,tipo){
-  const t=document.getElementById('toast');
-  t.textContent=msg;t.className='toast '+tipo;t.style.display='block';
-  setTimeout(()=>t.style.display='none',3500);
-}
-
-function showPage(id,btn){
-  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
-  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
-  document.getElementById('page-'+id).classList.add('active');
-  btn.classList.add('active');
-  if(id==='lista')caricaMese();
-  if(id==='settimane')caricaSettimane();
-  if(id==='spese')caricaSpeseDaSheet();
-  if(id==='aggi')document.getElementById('aggi-riepilogo').innerHTML='<div class="card"><p style="color:#888;font-size:14px;text-align:center;padding:8px">Clicca ↻ per caricare il riepilogo aggi</p></div>';
-  if(id==='banca')inizializzaBanca();
-  if(id==='andamento'){
-    const oggi=new Date();
-    document.getElementById('and-mese').value=oggi.getMonth();
-    document.getElementById('and-anno').value=oggi.getFullYear();
-    caricaAndamento();
-    renderSpeseFisseEditor();
-  }
-  if(id==='eventi'){ document.getElementById('eventi-list').innerHTML='<div class="loading">⏳ Caricamento...</div>'; sincronizzaEventiSheet().then(function(){ renderEventi(); }).catch(function(){ renderEventi(); }); }
-}
-
-function apriModificaGiorno(data, mese, anno){
-  const righe = ultimoMeseDati || [];
-  const r = righe.find(x => x.data === data) || {};
-  document.getElementById('modal-giorno-title').textContent = 'Modifica ' + (r.giorno||'') + ' ' + (data?data.slice(8):'') ;
-  document.getElementById('mg-cassa').value = parseFloat(r.chiusura)||'';
-  document.getElementById('mg-ubify').value = parseFloat(r.ubify)||'';
-  document.getElementById('mg-riki').value = parseFloat(r.rik)||'';
-  document.getElementById('mg-tab').value = parseFloat(r.tabacchi)||'';
-  document.getElementById('mg-note').value = (r.note && r.note !== 'RIPOSO') ? r.note : '';
-  document.getElementById('mg-riposo').checked = r.note === 'RIPOSO';
-  document.getElementById('mg-data').value = data;
-  document.getElementById('mg-mese').value = mese;
-  document.getElementById('mg-anno').value = anno;
-  document.getElementById('modal-giorno').style.display = 'flex';
-}
-
-async function salvaModificaGiorno(){
-  const data = document.getElementById('mg-data').value;
-  const mese = parseInt(document.getElementById('mg-mese').value);
-  const anno = parseInt(document.getElementById('mg-anno').value);
-  const riposo = document.getElementById('mg-riposo').checked;
-  const chiusura = parseFloat(document.getElementById('mg-cassa').value)||0;
-  const ubify = parseFloat(document.getElementById('mg-ubify').value)||0;
-  const rik = parseFloat(document.getElementById('mg-riki').value)||0;
-  const tab = parseFloat(document.getElementById('mg-tab').value)||0;
-  const note = document.getElementById('mg-note').value;
-  const d = new Date(data+'T12:00:00');
-  try{
-    await jsonp({
-      action:'salvaRiga', mese, anno, data,
-      giorno: GIORNI[d.getDay()],
-      chiusura: riposo?0:chiusura,
-      riccardo: riposo?0:rik,
-      tabacchi: riposo?0:tab,
-      ubify: riposo?0:ubify,
-      posUbify: 0,
-      note: riposo?'RIPOSO':note,
-      riposo: riposo?'1':'0'
-    });
-    document.getElementById('modal-giorno').style.display='none';
-    mostraToast('✅ Salvato!','ok');
-    // Alert battuto giornaliero
-    const totGiornaliero = (parseFloat(document.getElementById('inp-chiusura').value)||0) + (parseFloat(document.getElementById('inp-ubify').value)||0);
-    if(!riposo && totGiornaliero > 0 && totGiornaliero < 290) {
-      setTimeout(()=>{ mostraToast('⚠️ TROPPO POCO! Battuto €'+totGiornaliero.toFixed(0)+' — obiettivo €280/giorno','err'); }, 1500);
-    }
-    // Ricarica lista
-    caricaLista();
-  }catch(e){
-    mostraToast('❌ Errore salvataggio','err');
-  }
-}
-
-function inviaWhatsApp(){
-  const righe=[
-    '🏪 *Morris Pastorelli — BAR SEMPIONCINO*',
-    '',
-    '📍 Via Caduti di Bologna 7, Omegna 28887 (VB)',
-    '',
-    '🔢 *Cod. Fiscale:* PSTMRS96P29B019U',
-    '💼 *P.IVA:* 02816100032',
-    '📋 *REA:* 321250',
-    '📨 *SDI:* USAL8PV',
-    '📧 *PEC:* morris.pastorelli@pec.it',
-    '🏦 *IBAN:* IT50H0306945550100000019361'
-  ];
-  const testo=righe.join('%0A');
-  location.href='https://api.whatsapp.com/send?text='+testo;
-}
-
-// ============================================================
-// EVENTI
-// ============================================================
-const EVENTI_KEY = 'sempioncino_eventi';
-
-function salvaEventiStorage(eventi) {
-  try { localStorage.setItem(EVENTI_KEY, JSON.stringify(eventi)); } catch(e) {}
-}
-
-function caricaEventiStorage() {
-  try {
-    const raw = localStorage.getItem(EVENTI_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch(e) { return []; }
-}
-async function sincronizzaEventiSheet() {
-  try {
-    const res = await jsonp({action:'leggiEventi'});
-    if (res.eventi && res.eventi.length > 0) {
-      localStorage.setItem(EVENTI_KEY, JSON.stringify(res.eventi));
-      return res.eventi;
-    }
-  } catch(e) {}
-  return caricaEventiStorage();
-}
-
-async function salvaEventoSheet(evento) {
-  if (!evento.id) evento.id = 'ev_' + Date.now();
-  try { await jsonp({action:'salvaEvento', evento: JSON.stringify(evento)}); } catch(e) {}
-}
-
-function renderEventi() {
-  const eventi = caricaEventiStorage();
-  const cont = document.getElementById('eventi-list');
-  if (eventi.length === 0) {
-    cont.innerHTML = '<div class="empty" style="padding:20px"><div class="empty-icon">🎉</div><p>Nessun evento ancora.<br>Crea il primo!</p></div>';
-    return;
-  }
-  let html = '';
-  eventi.forEach((ev, idx) => {
-    const colBadge = ev.incasso > 0 ? '#1D9E75' : '#888';
-    html += `<div class="card" style="padding:14px;margin-bottom:8px;border-left:4px solid ${colBadge}">
-      <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px">
-        <div>
-          <div style="font-size:16px;font-weight:700">${ev.nome}</div>
-          <div style="font-size:12px;color:#888">${ev.date}</div>
-        </div>
-        <button onclick="eliminaEvento(${idx})" style="background:#fee;border:none;border-radius:8px;padding:4px 8px;color:#c00;cursor:pointer;font-size:12px">🗑️</button>
-      </div>`;
-
-    // Incasso
-    if (ev.incasso > 0) {
-      html += `<div style="background:#E8F5E9;border-radius:10px;padding:10px;margin-bottom:8px">
-        <div style="font-size:11px;font-weight:700;color:#1D9E75;text-transform:uppercase">💰 Incasso evento</div>
-        <div style="font-size:20px;font-weight:800;color:#1D9E75">${fmt(ev.incasso)}</div>
-        <div style="font-size:11px;color:#888">Cassa ${fmt(ev.cassa)} + Riki ${fmt(ev.riki)}</div>
-      </div>`;
-    } else {
-      html += `<button onclick="caricaIncassoEvento(${idx})" style="width:100%;background:#f5f5f5;border:1.5px dashed #ccc;border-radius:10px;padding:10px;color:#888;cursor:pointer;font-size:13px;margin-bottom:8px">📊 Carica incasso dal Google Sheet</button>`;
-    }
-
-    // Costo spesa
-    if (ev.costo > 0) {
-      const margine = ev.incasso - ev.costo;
-      const colM = margine >= 0 ? '#1D9E75' : '#E24B4A';
-      html += `<div style="display:flex;gap:8px;margin-bottom:8px">
-        <div style="flex:1;background:#FFF3E0;border-radius:10px;padding:10px;text-align:center">
-          <div style="font-size:11px;color:#E65100;font-weight:600">COSTO SPESA</div>
-          <div style="font-size:16px;font-weight:700;color:#E65100">${fmt(ev.costo)}</div>
-        </div>
-        ${ev.incasso > 0 ? `<div style="flex:1;background:${margine>=0?'#E8F5E9':'#FFEBEE'};border-radius:10px;padding:10px;text-align:center">
-          <div style="font-size:11px;color:${colM};font-weight:600">MARGINE</div>
-          <div style="font-size:16px;font-weight:700;color:${colM}">${margine>=0?'+':''}${fmt(margine)}</div>
-        </div>` : ''}
-      </div>`;
-    } else {
-      html += `<button onclick="aggiornaCosto(${idx})" style="width:100%;background:#f5f5f5;border:1.5px dashed #ccc;border-radius:10px;padding:8px;color:#888;cursor:pointer;font-size:12px;margin-bottom:8px">💸 Aggiungi costo spesa (opzionale)</button>`;
-    }
-
-    // Lista spesa
-    if (ev.spesa && ev.spesa.length > 0) {
-      html += `<details><summary style="font-size:12px;color:#8B6914;cursor:pointer;font-weight:600">📋 Lista della spesa (${ev.spesa.length} voci)</summary>
-        <div style="margin-top:8px;display:flex;flex-direction:column;gap:4px">`;
-      ev.spesa.forEach(s => {
-        html += `<div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:1px solid #f5f5f5">
-          <span>${s.nome}</span>
-          <span style="color:#666;font-weight:500">${s.qty}${s.prezzo?` — ${fmt(s.prezzo)}`:''}${s.note?` <span style="color:#aaa">(${s.note})</span>`:''}</span>
-        </div>`;
-      });
-      html += `</div></details>`;
-    }
-
-    html += `</div>`;
-  });
-  cont.innerHTML = html;
-}
-
-function nuovoEvento() {
-  const nome = prompt('Nome evento:');
-  if (!nome) return;
-  const date = prompt('Date (es. 26-27 settembre 2026):');
-  if (!date) return;
-
-  // Lista della spesa
-  const spesa = [];
-  if (confirm('Vuoi inserire la lista della spesa ora?')) {
-    let continua = true;
-    while (continua) {
-      const voce = prompt('Voce (es. "Gin x10") o lascia vuoto per finire:');
-      if (!voce) { continua = false; break; }
-      spesa.push({ nome: voce, qty: '', prezzo: 0, note: '' });
-    }
-  }
-
-  const eventi = caricaEventiStorage();
-  eventi.unshift({ nome, date, spesa, incasso: 0, cassa: 0, riki: 0, costo: 0, note: '' });
-  salvaEventiStorage(eventi);
-  renderEventi();
-}
-
-async function caricaIncassoEvento(idx) {
-  const eventi = caricaEventiStorage();
-  const ev = eventi[idx];
-  const dalStr = prompt('Data inizio evento (YYYY-MM-DD, es. 2026-09-26):');
-  if (!dalStr) return;
-  const alStr = prompt('Data fine evento (YYYY-MM-DD, es. 2026-09-27):');
-  if (!alStr) return;
-
-  mostraToast('⏳ Carico incasso...', 'ok');
-  try {
-    const dal = new Date(dalStr + 'T00:00:00');
-    const al = new Date(alStr + 'T23:59:59');
-    // Leggi le righe dal Google Sheet per il periodo
-    let totCassa = 0, totRiki = 0;
-    const anno = dal.getFullYear();
-    const mesiDaLeggere = new Set();
-    for (let d = new Date(dal); d <= al; d.setMonth(d.getMonth()+1)) {
-      mesiDaLeggere.add(d.getMonth());
-    }
-    for (const mese of mesiDaLeggere) {
-      const res = await jsonp({action:'leggiMese', mese, anno});
-      const righe = res.righe || [];
-      righe.forEach(r => {
-        const dataRiga = new Date(r.data + 'T12:00:00');
-        if (dataRiga >= dal && dataRiga <= al) {
-          totCassa += parseFloat(r.chiusura) || 0;
-          totRiki += parseFloat(r.rik) || 0;
-        }
-      });
-    }
-    ev.incasso = totCassa + totRiki;
-    ev.cassa = totCassa;
-    ev.riki = totRiki;
-    salvaEventiStorage(eventi);
-    renderEventi();
-    mostraToast(`✅ Incasso caricato: ${fmt(ev.incasso)}`, 'ok');
-  } catch(e) {
-    mostraToast('❌ Errore caricamento', 'err');
-  }
-}
-
-function aggiornaCosto(idx) {
-  const eventi = caricaEventiStorage();
-  const costo = parseFloat(prompt('Costo totale della spesa (€):'));
-  if (isNaN(costo)) return;
-  eventi[idx].costo = costo;
-  salvaEventiStorage(eventi);
-  renderEventi();
-}
-
-function eliminaEvento(idx) {
-  if (!confirm('Eliminare questo evento?')) return;
-  const eventi = caricaEventiStorage();
-  var evEl = eventi[idx];
-  eventi.splice(idx, 1);
-  salvaEventiStorage(eventi);
-  if(evEl && evEl.id) jsonp({action:'eliminaEventoSheet',id:evEl.id}).catch(function(){});
-  renderEventi();
-}
-
-// ============================================================
-// ANDAMENTO
-// ============================================================
-const SPESE_FISSE_DEFAULT = {
-  'Stipendio Stefania':          1600,
-  'F24 (tasse+contributi)':       797,
-  'INAIL (media mens.)':           29,
-  'TFR Stefania (media mens.)':   115,
-  'Contributi Morris+Sandro':     590,
-  'Sandro (stipendio)':           900,
-  'Affitto':                     1160,
-  'ACOMEA':                      1770,
-  'Finanziamento distributore':   315,
-  'Vono Domenico (licenza)':     1500,
-  'Lagostina (commercialista)':   250,
-  'Assicurazione':                140,
-  'Utenze (stima)':              1000,
-  'Telefonia (Fastweb)':           43,
-  'Studio paghe (Colobara)':       68,
-};
-
-function getSpeseFisseAnd() {
-  try {
-    const saved = localStorage.getItem('sempioncino_spese_fisse');
-    return saved ? JSON.parse(saved) : SPESE_FISSE_DEFAULT;
-  } catch(e) { return SPESE_FISSE_DEFAULT; }
-}
-
-function saveSpeseFisseAnd(obj) {
-  try { localStorage.setItem('sempioncino_spese_fisse', JSON.stringify(obj)); } catch(e) {}
-}
-
-const SPESE_FISSE_AND = getSpeseFisseAnd();
-const TOT_FISSE_AND = Object.values(SPESE_FISSE_AND).reduce((a,b)=>a+b,0);
-const FATTURE_BAR_MEDIA = 2500;
-const AGGI_MEDI = 6093;
-const SOGLIA_BATTUTO = TOT_FISSE_AND + FATTURE_BAR_MEDIA - AGGI_MEDI;
-const OBIETTIVO_BATTUTO = 7300;
-const OBIETTIVO_GIORNALIERO = 290;
-const GIORNI_LAVORATIVI = 25;
-const RICARICO_ATTESO = 3.0;
-
-async function caricaAndamento() {
-  const mese = parseInt(document.getElementById('and-mese').value);
-  const anno = document.getElementById('and-anno').value;
-  const cont = document.getElementById('andamento-container');
-  cont.innerHTML = '<div class="loading">⏳ Caricamento...</div>';
-  try {
-    const [resInc, resFat] = await Promise.all([
-      jsonp({action:'leggiTutto', mese, anno}),
-      jsonp({action:'leggiFatture', mese, anno})
-    ]);
-
-    const totCassa = parseFloat(resInc.totCassa)||0;
-    const totUbify = parseFloat(resInc.totUbify)||0;
-    const totRiki  = parseFloat(resInc.totRik)||0;
-    const totAggi  = parseFloat(resInc.totAggi)||0;
-    const battuto  = totCassa + totUbify;
-    const incFiscale = battuto + totAggi;
-    const incReale   = incFiscale + totRiki;
-
-    // Fatture reali dal sheet
-    const fatture = resFat.fatture || [];
-    const fatBar = fatture.filter(f => ['Caffè','Bar (forniture)','Surgelati/Gelati','Latte',
-      'Alimentari/Bevande','Snack/Dolciumi'].includes(f.categoria))
-      .reduce((s,f) => s+parseFloat(f.importo), 0);
-    const fatUtenze = fatture.filter(f => ['Utenze','Telefonia'].includes(f.categoria))
-      .reduce((s,f) => s+parseFloat(f.importo), 0);
-    const fatAltro = fatture.filter(f => !['Caffè','Bar (forniture)','Surgelati/Gelati','Latte',
-      'Alimentari/Bevande','Snack/Dolciumi','Utenze','Telefonia',
-      'Tabacchi (trasporto)','Giochi/Lotterie'].includes(f.categoria))
-      .reduce((s,f) => s+parseFloat(f.importo), 0);
-    const fatTotale = fatBar + fatUtenze + fatAltro;
-
-    // Spese totali
-    const utenzeReali = fatUtenze > 0 ? fatUtenze : 1000;
-    const speseFisse = TOT_FISSE_AND - 1000 + utenzeReali; // sostituisce stima utenze
-    const speseBar = fatBar > 0 ? fatBar : FATTURE_BAR_MEDIA;
-    const totSpese = speseFisse + speseBar + fatAltro;
-    const utileFiscale = incFiscale - totSpese;
-    const utileReale = incReale - totSpese;
-
-    // Controllo incrociato
-    const battutoAtteso = speseBar * RICARICO_ATTESO;
-    const scartoRicarico = battuto - battutoAtteso;
-
-    // Semaforo battuto
-    const pct = Math.min(100, Math.round(battuto / OBIETTIVO_BATTUTO * 100));
-    const colBatt = battuto >= 7500 ? '#1D9E75' : battuto >= 6500 ? '#F59E0B' : '#E24B4A';
-    const semBatt = battuto >= 7500 ? '🟢 PERFETTO' : battuto >= 6500 ? '🟡 ATTENZIONE' : '🔴 NON VA BENE';
-
-    let html = '';
-
-    // BARRA BATTUTO
-    html += `<div class="card" style="padding:14px;margin-bottom:8px;border:2px solid ${colBatt}">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-        <div style="font-size:13px;font-weight:700;color:${colBatt}">☕ BATTUTO ${MESI_NOMI[mese].toUpperCase()}</div>
-        <div style="font-size:13px;font-weight:700;color:${colBatt}">${semBatt}</div>
-      </div>
-      <div style="font-size:30px;font-weight:800;color:${colBatt};margin-bottom:8px">${fmt(battuto)}</div>
-      <div style="background:#f0f0f0;border-radius:8px;height:16px;overflow:hidden;margin-bottom:6px">
-        <div style="width:${pct}%;height:100%;background:${colBatt};border-radius:8px;transition:width 0.5s"></div>
-      </div>
-      <div style="display:flex;justify-content:space-between;font-size:11px;color:#888">
-        <span>€0</span><span>Obiettivo: ${fmt(OBIETTIVO_BATTUTO)}</span>
-      </div>
-      ${totUbify>0?`<div style="font-size:12px;color:#555;margin-top:6px">☕ Cassa ${fmt(totCassa)} + 🎰 Ubify ${fmt(totUbify)}</div>`:''}
-    </div>`;
-
-    // AGGI (contabilità separata)
-    html += `<div class="card" style="padding:14px;margin-bottom:8px;background:#f9f6f0">
-      <div style="font-size:11px;font-weight:700;color:#8B6914;text-transform:uppercase;margin-bottom:8px">🎰 Aggi (contabilità separata)</div>
-      <div style="font-size:24px;font-weight:800;color:#8B6914">${fmt(totAggi)}</div>
-      <div style="font-size:11px;color:#888;margin-top:4px">Tabacchi + Giochi — utile puro, nessuna spesa associata</div>
-    </div>`;
-
-    // UTILE
-    const colF = utileFiscale>=0?'#1D9E75':'#E24B4A';
-    const colR = utileReale>=0?'#1D4E89':'#E24B4A';
-    html += `<div class="card" style="padding:14px;margin-bottom:8px">
-      <div style="font-size:11px;font-weight:700;color:#555;text-transform:uppercase;margin-bottom:10px">💰 Utile mensile</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
-        <div style="background:${utileFiscale>=0?'#E8F5E9':'#FFEBEE'};border-radius:12px;padding:12px;text-align:center">
-          <div style="font-size:10px;font-weight:700;color:${colF};text-transform:uppercase;margin-bottom:4px">⚖️ Utile fiscale</div>
-          <div style="font-size:18px;font-weight:800;color:${colF}">${utileFiscale>=0?'+':''}${fmt(utileFiscale)}</div>
-          <div style="font-size:10px;color:#888;margin-top:2px">solo battuto+aggi</div>
-        </div>
-        <div style="background:${utileReale>=0?'#E3F2FD':'#FFEBEE'};border-radius:12px;padding:12px;text-align:center">
-          <div style="font-size:10px;font-weight:700;color:${colR};text-transform:uppercase;margin-bottom:4px">💰 Utile reale</div>
-          <div style="font-size:18px;font-weight:800;color:${colR}">${utileReale>=0?'+':''}${fmt(utileReale)}</div>
-          <div style="font-size:10px;color:#888;margin-top:2px">con Riki</div>
-        </div>
-      </div>
-      <div style="font-size:12px;color:#888;padding:8px 0;border-top:1px solid #f0f0f0">
-        <div style="display:flex;justify-content:space-between;padding:2px 0"><span>Incasso fiscale (battuto+aggi)</span><span style="font-weight:600">${fmt(incFiscale)}</span></div>
-        <div style="display:flex;justify-content:space-between;padding:2px 0"><span>+ Riki</span><span style="font-weight:600">${fmt(totRiki)}</span></div>
-        <div style="display:flex;justify-content:space-between;padding:2px 0"><span>Spese totali</span><span style="font-weight:600;color:#E24B4A">−${fmt(totSpese)}</span></div>
-      </div>
-    </div>`;
-
-    // SPESE DETTAGLIO
-    html += `<div class="card" style="padding:14px;margin-bottom:8px">
-      <div style="font-size:11px;font-weight:700;color:#E65100;text-transform:uppercase;margin-bottom:10px">💸 Spese del mese</div>
-      <div style="font-size:13px;font-weight:600;color:#555;margin-bottom:6px">Spese fisse</div>`;
-    Object.entries(SPESE_FISSE_AND).forEach(([k,v]) => {
-      var val = k === 'Utenze (stima)' ? utenzeReali : v;
-      var note = k === 'Utenze (stima)' && fatUtenze > 0 ? ' (reale)' : k === 'Utenze (stima)' ? ' (stima)' : '';
-      html += `<div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0;border-bottom:1px solid #f5f5f5">
-        <span style="color:#555">${k}${note}</span><span style="font-weight:500">€${val.toLocaleString('it-IT',{minimumFractionDigits:0})}</span>
-      </div>`;
-    });
-    html += `<div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0;font-weight:700;border-top:2px solid #eee;margin-top:4px">
-      <span>Totale fisse</span><span style="color:#E65100">€${speseFisse.toLocaleString('it-IT',{minimumFractionDigits:0})}</span>
-    </div>
-    <div style="font-size:13px;font-weight:600;color:#555;margin:10px 0 6px">Fatture bar</div>`;
-    if(fatBar>0){
-      ['Caffè','Bar (forniture)','Surgelati/Gelati','Latte','Alimentari/Bevande','Snack/Dolciumi'].forEach(cat=>{
-        var v=fatture.filter(f=>f.categoria===cat).reduce((s,f)=>s+parseFloat(f.importo),0);
-        if(v>0) html+=`<div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0;border-bottom:1px solid #f5f5f5"><span style="color:#555">${cat}</span><span>${fmt(v)}</span></div>`;
-      });
-    } else {
-      html+=`<div style="font-size:12px;color:#aaa;padding:4px 0">Media: ${fmt(FATTURE_BAR_MEDIA)} (fatture non ancora caricate)</div>`;
-    }
-    html += `<div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0;font-weight:700;border-top:2px solid #eee;margin-top:4px">
-      <span>Totale bar</span><span style="color:#E65100">${fmt(speseBar)}</span>
-    </div>
-    <div style="display:flex;justify-content:space-between;font-size:14px;padding:8px 0;font-weight:800;border-top:2px solid var(--nero);margin-top:4px">
-      <span>TOTALE SPESE</span><span style="color:#E65100">${fmt(totSpese)}</span>
-    </div></div>`;
-
-    // CONTROLLO INCROCIATO
-    const colInc = scartoRicarico >= 0 ? '#1D9E75' : '#E24B4A';
-    const semInc = scartoRicarico >= 0 ? '✅ IN LINEA' : '⚠️ SOTTO ATTESO';
-    html += `<div class="card" style="padding:14px;border:2px solid ${colInc}">
-      <div style="font-size:11px;font-weight:700;color:${colInc};text-transform:uppercase;margin-bottom:10px">🔍 Controllo incrociato (fatture × ${RICARICO_ATTESO})</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px">
-        <div style="background:#f5f5f5;border-radius:10px;padding:10px;text-align:center">
-          <div style="font-size:10px;color:#888;margin-bottom:4px">Acquisti bar</div>
-          <div style="font-size:15px;font-weight:700">${fmt(speseBar)}</div>
-        </div>
-        <div style="background:#f5f5f5;border-radius:10px;padding:10px;text-align:center">
-          <div style="font-size:10px;color:#888;margin-bottom:4px">Battuto atteso ×3</div>
-          <div style="font-size:15px;font-weight:700">${fmt(battutoAtteso)}</div>
-        </div>
-        <div style="background:${scartoRicarico>=0?'#E8F5E9':'#FFEBEE'};border-radius:10px;padding:10px;text-align:center">
-          <div style="font-size:10px;color:${colInc};margin-bottom:4px">Scarto</div>
-          <div style="font-size:15px;font-weight:700;color:${colInc}">${scartoRicarico>=0?'+':''}${fmt(scartoRicarico)}</div>
-        </div>
-      </div>
-      <div style="font-size:13px;font-weight:700;color:${colInc};text-align:center">${semInc}</div>
-      ${scartoRicarico<0?`<div style="font-size:11px;color:#888;margin-top:6px;text-align:center">Con €${fmt(speseBar)} di acquisti dovresti battere almeno ${fmt(battutoAtteso)}</div>`:''}
-    </div>`;
-
-    cont.innerHTML = html;
-  } catch(e) {
-    cont.innerHTML = '<div class="empty"><div class="empty-icon">📡</div><p>Errore connessione. Riprova.</p></div>';
-  }
-}
-
-function renderSpeseFisseEditor() {
-  const fisse = getSpeseFisseAnd();
-  const tot = Object.values(fisse).reduce((a,b)=>a+b,0);
-  let html = '<div style="margin-bottom:12px">';
-  Object.entries(fisse).forEach(([k,v]) => {
-    html += `<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #f0f0f0">
-      <span style="flex:1;font-size:13px;color:#555">${k}</span>
-      <input type="number" value="${v}" onchange="aggiornaFissa('${k.replace(/'/g,"\'")}',this.value)"
-        style="width:90px;padding:6px 8px;border:1.5px solid #e8e8e8;border-radius:8px;font-size:13px;text-align:right">
-      <button onclick="rimuoviFissa('${k.replace(/'/g,"\'")}'"
-        style="background:#fee;border:none;border-radius:6px;padding:4px 8px;color:#c00;cursor:pointer;font-size:12px">✕</button>
-    </div>`;
-  });
-  html += `</div>
-    <div style="display:flex;justify-content:space-between;font-size:14px;font-weight:700;padding:8px 0;border-top:2px solid var(--nero)">
-      <span>TOTALE</span><span style="color:#E65100">€${tot.toLocaleString('it-IT',{minimumFractionDigits:0})}</span>
-    </div>
-    <div style="display:flex;gap:8px;margin-top:12px">
-      <input type="text" id="nuova-fissa-nome" placeholder="Nome voce..." style="flex:1;padding:10px;border:1.5px solid #e8e8e8;border-radius:10px;font-size:13px">
-      <input type="number" id="nuova-fissa-importo" placeholder="€" style="width:80px;padding:10px;border:1.5px solid #e8e8e8;border-radius:10px;font-size:13px">
-      <button onclick="aggiungiFissa()" class="btn-save" style="width:auto;padding:10px 14px;margin:0">+</button>
-    </div>
-    <button onclick="resetSpeseFisse()" style="margin-top:8px;width:100%;background:#f5f5f5;border:1px solid #ddd;border-radius:10px;padding:8px;font-size:12px;color:#888;cursor:pointer">↺ Ripristina valori predefiniti</button>`;
-  document.getElementById('spese-fisse-editor').innerHTML = html;
-}
-
-function aggiornaFissa(nome, valore) {
-  const fisse = getSpeseFisseAnd();
-  fisse[nome] = parseFloat(valore)||0;
-  saveSpeseFisseAnd(fisse);
-  const tot = Object.values(fisse).reduce((a,b)=>a+b,0);
-  mostraToast('✅ Salvato!','ok');
-}
-
-function rimuoviFissa(nome) {
-  if(!confirm('Rimuovere "'+nome+'"?')) return;
-  const fisse = getSpeseFisseAnd();
-  delete fisse[nome];
-  saveSpeseFisseAnd(fisse);
-  renderSpeseFisseEditor();
-  mostraToast('✅ Voce rimossa','ok');
-}
-
-function aggiungiFissa() {
-  const nome = document.getElementById('nuova-fissa-nome').value.trim();
-  const importo = parseFloat(document.getElementById('nuova-fissa-importo').value)||0;
-  if(!nome || importo <= 0) { mostraToast('❌ Inserisci nome e importo','err'); return; }
-  const fisse = getSpeseFisseAnd();
-  fisse[nome] = importo;
-  saveSpeseFisseAnd(fisse);
-  document.getElementById('nuova-fissa-nome').value='';
-  document.getElementById('nuova-fissa-importo').value='';
-  renderSpeseFisseEditor();
-  mostraToast('✅ Voce aggiunta!','ok');
-}
-
-function resetSpeseFisse() {
-  if(!confirm('Ripristinare i valori predefiniti? Le modifiche andranno perse.')) return;
-  localStorage.removeItem('sempioncino_spese_fisse');
-  renderSpeseFisseEditor();
-  mostraToast('✅ Ripristinato!','ok');
-}
-
-// INIT
-const inpData=document.getElementById('inp-data');
-inpData.value=new Date().toISOString().slice(0,10);
-const nm=new Date().getMonth();
-['sel-mese','sett-mese','ag-mese','sp-mese'].forEach(id=>{const el=document.getElementById(id);if(el)el.value=nm;});
-
-function aggiornaGiorno(){
-  const d=new Date(inpData.value+'T12:00:00');
-  document.getElementById('inp-giorno').value=GIORNI[d.getDay()];
-}
-
-function aggiornaInputMese(){
-  const d=new Date(inpData.value+'T12:00:00');
-  const row=document.getElementById('row-pos-tab');
-  if(row)row.style.display=d.getMonth()>=MESE_INIZIO_POS?'grid':'none';
-}
-
-aggiornaGiorno();
-aggiornaInputMese();
-inpData.addEventListener('change',()=>{aggiornaGiorno();aggiornaInputMese();});
-
-const oggi=new Date();
-const elOggi=document.getElementById('data-oggi');
-if(elOggi)elOggi.textContent=oggi.toLocaleDateString('it-IT',{weekday:'long',day:'numeric',month:'long'});
-
-document.getElementById('inp-riposo').addEventListener('change',function(){
-  ['inp-chiusura','inp-riccardo','inp-pos','inp-tabacchi'].forEach(id=>{
-    const el=document.getElementById(id);
-    if(el){el.disabled=this.checked;if(this.checked)el.value='';}
-  });
-  if(this.checked)document.getElementById('inp-note').value='RIPOSO';
-  else if(document.getElementById('inp-note').value==='RIPOSO')document.getElementById('inp-note').value='';
-});
-
-async function salva(){
-  const data=inpData.value;
-  if(!data){mostraToast('❌ Inserisci una data','err');return;}
-  const chiusura=parseFloat(document.getElementById('inp-chiusura').value)||0;
-  const rik=parseFloat(document.getElementById('inp-riccardo').value)||0;
-  const pos=parseFloat(document.getElementById('inp-pos').value)||0;
-  const tab=parseFloat(document.getElementById('inp-tabacchi').value)||0;
-  const riposo=document.getElementById('inp-riposo').checked;
-  if(!riposo&&chiusura===0){mostraToast('❌ Inserisci la chiusura cassa','err');return;}
-  const btn=document.getElementById('btn-salva');
-  btn.disabled=true;btn.textContent='⏳ Salvataggio...';
-  const d=new Date(data+'T12:00:00');
-  try{
-    const res=await jsonp({action:'salvaRiga',mese:d.getMonth(),anno:d.getFullYear(),data,giorno:GIORNI[d.getDay()],chiusura:riposo?0:chiusura,riccardo:riposo?0:rik,pos:riposo?0:pos,tabacchi:riposo?0:tab,ubify:riposo?0:(parseFloat(document.getElementById('inp-ubify').value)||0),posUbify:riposo?0:(parseFloat(document.getElementById('inp-pos-ubify').value)||0),note:document.getElementById('inp-note').value,riposo:riposo?'1':'0'});
-    if(res.ok){
-      mostraToast('✅ Salvato!','ok');
-      ['inp-chiusura','inp-riccardo','inp-pos','inp-tabacchi','inp-note'].forEach(id=>{const el=document.getElementById(id);if(el){el.value='';el.disabled=false;}});
-      document.getElementById('inp-riposo').checked=false;
-      inpData.value=new Date().toISOString().slice(0,10);
-      aggiornaGiorno();aggiornaInputMese();
-    }else mostraToast('❌ '+(res.error||'Errore'),'err');
-  }catch(e){mostraToast('❌ Errore di connessione','err');}
-  btn.disabled=false;btn.textContent='💾 Salva su Google Sheets';
-}
-
-async function salvaAggi(){
-  const mese=document.getElementById('ag-mese').value,anno=document.getElementById('ag-anno').value;
-  const btn=document.getElementById('btn-aggi');
-  btn.disabled=true;btn.textContent='⏳ Salvataggio...';
-  try{
-    const res=await jsonp({action:'salvaAggi',mese,anno,
-      lotto:document.getElementById('ag-lotto').value||0,
-      lis:document.getElementById('ag-lis').value||0,
-      sir:document.getElementById('ag-sir').value||0,
-      sisal:document.getElementById('ag-sisal').value||0,
-      aspan:document.getElementById('ag-aspan').value||0,
-      gratta:document.getElementById('ag-gratta').value||0,
-      macc:document.getElementById('ag-macc').value||0,
-      tab:document.getElementById('ag-tab').value||0});
-    if(res.ok){
-      mostraToast('✅ Aggi salvati!','ok');
-      ['ag-lotto','ag-lis','ag-sir','ag-sisal','ag-aspan','ag-gratta','ag-macc','ag-tab'].forEach(id=>document.getElementById(id).value='');
-      caricaAggiRiepilogo();
-    }else mostraToast('❌ Errore','err');
-  }catch(e){mostraToast('❌ Errore di connessione','err');}
-  btn.disabled=false;btn.textContent='💾 Salva aggi';
-}
-
-async function caricaAggiRiepilogo(){
-  const mese=document.getElementById('ag-mese').value,anno=document.getElementById('ag-anno').value;
-  const cont=document.getElementById('aggi-riepilogo');
-  cont.innerHTML='<div class="loading">⏳ Caricamento...</div>';
-  try{
-    const res=await jsonp({action:'leggiAggi',mese,anno});
-    if(res&&res.aggi){
-      const a=res.aggi;
-      const totG=(parseFloat(a.lotto)||0)+(parseFloat(a.lis)||0)+(parseFloat(a.sir)||0)+(parseFloat(a.sisal)||0)+(parseFloat(a.aspan)||0)+(parseFloat(a.gratta)||0)+(parseFloat(a.macc)||0);
-      const totT=parseFloat(a.tab)||0;
-      cont.innerHTML='<div class="card"><div class="card-title">Aggi '+MESI_NOMI[parseInt(mese)]+' '+anno+'</div>'
-        +'<div class="section-label">Giochi</div>'
-        +[['Lotto',a.lotto],['LIS',a.lis],['SIR',a.sir],['Sisal',a.sisal],['Aspan',a.aspan],['Gratta & Vinci',a.gratta],['Macchinette',a.macc]].map(([n,v])=>'<div class="spesa-row"><span>'+n+'</span><span style="font-weight:700">'+fmt(parseFloat(v)||0)+'</span></div>').join('')
-        +'<div class="spesa-row" style="font-weight:700"><span>Tot. giochi</span><span style="color:var(--beige)">'+fmt(totG)+'</span></div>'
-        +'<div class="section-label">Tabacchi</div>'
-        +'<div class="spesa-row"><span>Aggio Tabacchi</span><span style="font-weight:700">'+fmt(totT)+'</span></div>'
-        +'<div class="spesa-row" style="font-weight:700;font-size:15px;padding-top:8px"><span>TOTALE AGGI</span><span style="color:var(--beige)">'+fmt(totG+totT)+'</span></div>'
-        +'</div>';
-    }else{
-      cont.innerHTML='<div class="card"><p style="color:#888;font-size:14px;text-align:center;padding:8px">Nessun aggio inserito per questo mese.</p></div>';
-    }
-  }catch(e){
-    cont.innerHTML='<div class="card"><p style="color:#E24B4A;font-size:14px;text-align:center;padding:8px">❌ Errore connessione. Riprova.</p></div>';
-  }
-}
-
-async function caricaMese(){
-  const mese=parseInt(document.getElementById('sel-mese').value);
-  const anno=document.getElementById('sel-anno').value;
-  const cont=document.getElementById('lista-container');
-  cont.innerHTML='<div class="loading">⏳ Caricamento...</div>';
-  ['s-cassa','s-rik','s-pos','s-tab','s-aggi','s-totale'].forEach(id=>{const el=document.getElementById(id);if(el)el.textContent='...';});
-  try{
-    const res=await jsonp({action:'leggiTutto',mese,anno});
-    ultimoMeseDati=res.righe||[];
-    document.getElementById('s-cassa').textContent=fmt(res.totCassa||0);
-    document.getElementById('s-rik').textContent=fmt(res.totRik||0);
-    const elPos=document.getElementById('s-pos');if(elPos)elPos.textContent=fmt(res.totPos||0);
-    const elTab=document.getElementById('s-tab');if(elTab)elTab.textContent=fmt(res.totTab||0);
-    document.getElementById('s-aggi').textContent=fmt(res.totAggi||0);
-    document.getElementById('s-totale').textContent=fmt(res.totIncasso||0);
-    renderLista(ultimoMeseDati,mese);
-  }catch(e){
-    cont.innerHTML='<div class="empty"><div class="empty-icon">📡</div><p>Errore di connessione.<br>Riprova.</p></div>';
-  }
-}
-
-function renderLista(righe,mese){
-  ultimoMeseDati = righe;
-  const cont=document.getElementById('lista-container');
-  if(righe.length===0){cont.innerHTML='<div class="empty"><div class="empty-icon">📭</div><p>Nessuna giornata inserita.</p></div>';return;}
-  const hasPT=mese>=MESE_INIZIO_POS;
-  const sorted=[...righe].sort((a,b)=>b.data.localeCompare(a.data));
-  let html='<div class="entry-list">';
-  sorted.forEach(r=>{
-    const g=r.data?r.data.slice(8):'';
-    const nota=r.note==='RIPOSO'?'<span class="entry-riposo">RIPOSO</span>':r.note?'<span class="entry-note">'+r.note+'</span>':'';
-    const c=parseFloat(r.chiusura)||0;
-    const rk=parseFloat(r.rik)||0;
-    const ps=hasPT?(parseFloat(r.pos)||0):0;
-    const tb=hasPT?(parseFloat(r.tabacchi)||0):0;
-    let amounts='';
-    const ub=parseFloat(r.ubify)||0;
-    const pub=parseFloat(r.posUbify)||0;
-    if(r.note!=='RIPOSO'){
-      amounts='<div class="entry-amounts">';
-      amounts+='<div class="entry-chip"><span>Cassa </span>'+fmt(c)+'</div>';
-      if(ub>0)amounts+='<div class="entry-chip"><span>Ubify </span>'+fmt(ub)+'</div>';
-      if(rk>0)amounts+='<div class="entry-chip"><span>Riki </span>'+fmt(rk)+'</div>';
-      if(hasPT&&ps>0)amounts+='<div class="entry-chip"><span>POS </span>'+fmt(ps)+'</div>';
-      if(hasPT&&tb>0)amounts+='<div class="entry-chip"><span>Tab. </span>'+fmt(tb)+'</div>';
-      amounts+='</div>';
-    }
-    const dObj=new Date(r.data+'T12:00:00');
-    const rJson=encodeURIComponent(JSON.stringify(r));
-    html+='<div class="entry" onclick="apriModificaGiorno(\''+r.data+'\','+dObj.getMonth()+','+dObj.getFullYear()+')" style="cursor:pointer"><div class="entry-date">'+g+'</div><div class="entry-info"><div class="entry-day">'+(r.giorno||'')+'</div>'+amounts+nota+'</div><button class="del-btn" onclick="event.stopPropagation();elimina(&quot;'+r.data+'&quot;,'+dObj.getMonth()+','+dObj.getFullYear()+')">🗑</button></div>';
-  });
-  html+='</div>';
-  cont.innerHTML=html;
-}
-
-async function elimina(data,mese,anno){
-  if(!confirm('Eliminare la giornata del '+data+'?'))return;
-  try{
-    const res=await jsonp({action:'eliminaRiga',mese,anno,data});
-    if(res.ok){mostraToast('✅ Eliminato','ok');caricaMese();}
-    else mostraToast('❌ '+(res.error||'Errore'),'err');
-  }catch(e){mostraToast('❌ Errore','err');}
-}
-
-// ============================================================
-// SEZIONE SPESE — due viste: fiscale (senza Riki) e reale (con Riki)
-// ============================================================
-
-function getSpeseFisse(mese) {
-  // mese = 0-based (0=Gen, 7=Ago)
-  const fisse = SPESE_FISSE.map(s => ({...s}));
-  // Vono aumenta a 1500 da agosto 2026
-  const vonoIdx = fisse.findIndex(s => s.nome.includes('Vono'));
-  if (vonoIdx >= 0 && mese >= 7) fisse[vonoIdx].importo = VONO_AUG;
-  return fisse;
-}
-
-async function caricaSpeseDaSheet(){
-  const mese=parseInt(document.getElementById('sp-mese').value);
-  const anno=document.getElementById('sp-anno').value;
-  const contS=document.getElementById('spese-container');
-  const contU=document.getElementById('utile-container');
-  contS.innerHTML='<div class="loading">⏳ Caricamento...</div>';
-  contU.innerHTML='';
-  try{
-    // Carica fatture e incassi in parallelo
-    const [resFatture, resIncassi] = await Promise.all([
-      jsonp({action:'leggiFatture', mese, anno}),
-      jsonp({action:'leggiTutto', mese, anno})
-    ]);
-    // Aggiorna SPESE_FATTURE con dati dal Sheet
-    const fatture = resFatture.fatture || [];
-    const sfMese = {};
-    fatture.forEach(f => {
-      if(!sfMese[f.categoria]) sfMese[f.categoria] = 0;
-      sfMese[f.categoria] += parseFloat(f.importo) || 0;
-    });
-    // Arrotonda
-    Object.keys(sfMese).forEach(k => sfMese[k] = parseFloat(sfMese[k].toFixed(2)));
-    SPESE_FATTURE[mese+1] = sfMese;
-    // Render spese
-    renderSpeseFisse(mese);
-    // Render incassi e utile
-    const totIncassi=parseFloat(resIncassi.totIncasso)||0;
-    const totCassa=parseFloat(resIncassi.totCassa)||0;
-    const totRik=parseFloat(resIncassi.totRik)||0;
-    const totAggi=parseFloat(resIncassi.totAggi)||0;
-    const totPos=parseFloat(resIncassi.totPos)||0;
-    const totTab=parseFloat(resIncassi.totTab)||0;
-    const totF=Object.values(sfMese).reduce((a,b)=>a+b,0);
-    const isTrim=MESI_TRIM.includes(mese);
-    const fisseMese=getSpeseFisse(mese);
-    const totFisse=fisseMese.reduce((a,b)=>a+b.importo,0)+(isTrim?TOT_TRIM:0);
-    const entStr=ENTRATE_STRAORD[mese+1]||[];
-    const totEntStr=entStr.reduce((a,b)=>a+b.importo,0);
-    const totSpese=totF+totFisse-totEntStr;
-
-    // INCASSO FISCALE = Cassa + Ubify + Aggi (NO Riki, NO Tabacchi)
-    const totUbify=parseFloat(resIncassi.totUbify)||0;
-    const incFiscale=totCassa+totUbify+totAggi;
-    // INCASSO REALE = Fiscale + Riki
-    const incReale=incFiscale+totRik;
-
-    const utileFiscale=incFiscale-totSpese;
-    const utileReale=incReale-totSpese;
-
-    const colF=utileFiscale>=0?'#3B6D11':'#A32D2D';
-    const colR=utileReale>=0?'#1D4E89':'#A32D2D';
-
-    let html='';
-
-    // SEZIONE 1: CONTROLLO FISCALE
-    html+='<div class="card" style="border:2px solid #8B6914;padding:14px;margin-bottom:8px">';
-    html+='<div style="font-size:11px;font-weight:700;color:#8B6914;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px">⚖️ Sezione 1 — Controllo Fiscale (senza Riki)</div>';
-    html+='<div class="stat-grid" style="margin-bottom:10px">';
-    html+='<div class="stat"><div class="stat-label">☕ Cassa</div><div class="stat-value">'+fmt(totCassa)+'</div></div>';
-    html+='<div class="stat"><div class="stat-label">🎰 Ubify</div><div class="stat-value">'+fmt(totUbify)+'</div></div>';
-    html+='<div class="stat full"><div class="stat-label">🎰 Aggi</div><div class="stat-value">'+fmt(totAggi)+'</div></div>';
-    html+='<div class="stat full" style="background:'+colF+'"><div class="stat-label" style="color:rgba(255,255,255,0.8)">INCASSO DICHIARATO</div><div class="stat-value" style="color:#fff">'+fmt(incFiscale)+'</div></div>';
-    html+='</div>';
-    html+='<div style="display:flex;justify-content:space-between;padding:8px 0;font-size:13px"><span>Fatture fornitori</span><span style="color:#E24B4A;font-weight:600">−'+fmt(totF)+'</span></div>';
-    html+='<div style="display:flex;justify-content:space-between;padding:8px 0;font-size:13px;border-bottom:1px solid #f0f0f0"><span>Spese fisse</span><span style="color:#E24B4A;font-weight:600">−'+fmt(totFisse)+'</span></div>';
-    html+='<div style="display:flex;justify-content:space-between;padding:10px 0;font-size:16px;font-weight:700"><span>UTILE FISCALE</span><span style="color:'+colF+'">'+(utileFiscale>=0?'+':'')+fmt(utileFiscale)+'</span></div>';
-    html+='<div style="font-size:11px;color:#888">'+fmt(incFiscale)+' incassi − '+fmt(totSpese)+' spese</div>';
-    html+='</div>';
-
-    // SEZIONE 2: UTILE REALE
-    html+='<div class="card" style="border:2px solid #1D4E89;padding:14px">';
-    html+='<div style="font-size:11px;font-weight:700;color:#1D4E89;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:10px">💰 Sezione 2 — Utile Reale (con Riki)</div>';
-    html+='<div class="stat-grid" style="margin-bottom:10px">';
-    html+='<div class="stat"><div class="stat-label">☕ Cassa+Ubify+Aggi</div><div class="stat-value">'+fmt(incFiscale)+'</div></div>';
-    html+='<div class="stat"><div class="stat-label">👤 Riki</div><div class="stat-value">'+fmt(totRik)+'</div></div>';
-    html+='<div class="stat full" style="background:#1D4E89"><div class="stat-label" style="color:rgba(255,255,255,0.8)">INCASSO TOTALE REALE</div><div class="stat-value" style="color:#fff">'+fmt(incReale)+'</div></div>';
-    html+='</div>';
-    html+='<div style="display:flex;justify-content:space-between;padding:8px 0;font-size:13px"><span>Fatture fornitori</span><span style="color:#E24B4A;font-weight:600">−'+fmt(totF)+'</span></div>';
-    html+='<div style="display:flex;justify-content:space-between;padding:8px 0;font-size:13px;border-bottom:1px solid #f0f0f0"><span>Spese fisse</span><span style="color:#E24B4A;font-weight:600">−'+fmt(totFisse)+'</span></div>';
-    html+='<div style="display:flex;justify-content:space-between;padding:10px 0;font-size:16px;font-weight:700"><span>UTILE REALE</span><span style="color:'+colR+'">'+(utileReale>=0?'+':'')+fmt(utileReale)+'</span></div>';
-    html+='<div style="font-size:11px;color:#888">'+fmt(incReale)+' incassi totali − '+fmt(totSpese)+' spese</div>';
-    html+='</div>';
-
-    contU.innerHTML=html;
-  }catch(e){
-    contS.innerHTML='<div class="empty"><div class="empty-icon">📡</div><p>Errore caricamento. Riprova.</p></div>';
-    contU.innerHTML='';
-  }
-}
-
-function mostraBottoneUtile(){
-  const cont=document.getElementById('utile-container');
-  if(cont)cont.innerHTML='<button class="btn-save" onclick="caricaSpese()" style="margin-bottom:12px">📊 Carica incassi e calcola utile netto</button>';
-}
-
-async function caricaSpese(){
-  const mese=parseInt(document.getElementById('sp-mese').value);
-  const anno=document.getElementById('sp-anno').value;
-  const contU=document.getElementById('utile-container');
-  contU.innerHTML='<div class="loading">⏳ Caricamento incassi...</div>';
-  renderSpeseFisse(mese);
-  try{
-    const res=await jsonp({action:'leggiTutto',mese,anno});
-    const totIncassi=parseFloat(res.totIncasso)||0;
-    const totCassa=parseFloat(res.totCassa)||0;
-    const totRik=parseFloat(res.totRik)||0;
-    const totAggi=parseFloat(res.totAggi)||0;
-    const totPos=parseFloat(res.totPos)||0;
-    const totTab=parseFloat(res.totTab)||0;
-    const sf=SPESE_FATTURE[mese+1]||{};
-    const totF=Object.values(sf).reduce((a,b)=>a+b,0);
-    const isTrim=MESI_TRIM.includes(mese);
-    const totFisse=TOT_FISSE+(isTrim?TOT_TRIM:0);
-    const entStr=ENTRATE_STRAORD[mese+1]||[];
-    const totEntStr=entStr.reduce((a,b)=>a+b.importo,0);
-    const totSpese=totF+totFisse-totEntStr;
-    const utile=totIncassi-totSpese;
-    const hasPT=mese>=MESE_INIZIO_POS;
-    let html='<div class="card" style="padding:12px"><div class="stat-grid">';
-    html+='<div class="stat"><div class="stat-label">☕ Cassa</div><div class="stat-value">'+fmt(totCassa)+'</div></div>';
-    html+='<div class="stat"><div class="stat-label">👤 Riki</div><div class="stat-value">'+fmt(totRik)+'</div></div>';
-    if(hasPT){
-      html+='<div class="stat"><div class="stat-label">💳 POS</div><div class="stat-value">'+fmt(totPos)+'</div></div>';
-      html+='<div class="stat"><div class="stat-label">🚬 Tabacchi</div><div class="stat-value">'+fmt(totTab)+'</div></div>';
-    }
-    html+='<div class="stat"><div class="stat-label">🎰 Aggi</div><div class="stat-value">'+fmt(totAggi)+'</div></div>';
-    html+='<div class="stat full"><div class="stat-label">TOT. INCASSO</div><div class="stat-value">'+fmt(totIncassi)+'</div></div>';
-    html+='</div></div>';
-    const col=utile>=0?'#3B6D11':'#A32D2D';
-    html+='<div class="card" style="padding:16px;border:2px solid '+col+'">';
-    html+='<div style="font-size:11px;font-weight:700;color:'+col+';text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px">💰 Utile netto '+MESI_NOMI[mese]+'</div>';
-    html+='<div style="font-size:28px;font-weight:800;color:'+col+'">'+(utile>=0?'+':'')+fmt(utile)+'</div>';
-    html+='<div style="font-size:12px;color:#888;margin-top:4px">'+fmt(totIncassi)+' incassi − '+fmt(totSpese)+' spese nette</div>';
-    if(totEntStr>0){html+='<div style="font-size:11px;color:#3B6D11;margin-top:4px">✅ Include finanziamento +'+fmt(totEntStr)+' dedotto dalle spese</div>';}
-    html+='</div>';
-    contU.innerHTML=html;
-  }catch(e){
-    contU.innerHTML='<div style="background:#FCEBEB;border-radius:12px;padding:12px;color:#A32D2D;font-size:13px;margin-bottom:12px;text-align:center">⏳ Caricamento lento... <br><button class="btn-save" onclick="caricaSpese()" style="margin-top:8px;font-size:14px;padding:10px">↻ Riprova</button></div>';
-  }
-}
-
-function renderSpeseFisse(mese){
-  const sf=SPESE_FATTURE[mese+1]||{};
-  const totF=Object.values(sf).reduce((a,b)=>a+b,0);
-  const isTrim=MESI_TRIM.includes(mese);
-  const totFisse=TOT_FISSE+(isTrim?TOT_TRIM:0);
-  const maxCat=Math.max(...Object.values(sf),1);
-  const cont=document.getElementById('spese-container');
-  let html='';
-  if(Object.keys(sf).length>0){
-    html+='<div class="card"><div class="card-title">Fatture per categoria — '+MESI_NOMI[mese]+'</div>';
-    Object.entries(sf).sort((a,b)=>b[1]-a[1]).forEach(([cat,val])=>{
-      const pct=Math.round((val/maxCat)*100);
-      const col=CAT_COLORS[cat]||'#888';
-      html+='<div style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;margin-bottom:3px"><span style="font-size:13px;color:#444">'+cat+'</span><span style="color:#E24B4A;font-weight:700">'+fmt(val)+'</span></div><div class="bar-bg"><div class="bar-fill" style="width:'+pct+'%;background:'+col+'"></div></div></div>';
-    });
-    html+='<div style="display:flex;justify-content:space-between;padding-top:8px;font-weight:700"><span>Tot. fatture</span><span style="color:#E24B4A">'+fmt(totF)+'</span></div></div>';
-  }else{
-    html+='<div class="card"><div style="text-align:center;padding:12px;color:#888;font-size:13px">📂 Carica il file Excel di '+MESI_NOMI[mese]+' da Sportello.cloud</div></div>';
-  }
-  html+='<div class="card"><div class="card-title">Spese fisse — '+MESI_NOMI[mese]+'</div>';
-  SPESE_FISSE.forEach(s=>{html+='<div class="spesa-row"><span>'+s.icona+' '+s.nome+'</span><span style="color:#888;font-weight:700">'+fmt(s.importo)+'</span></div>';});
-  if(isTrim){
-    html+='<div class="section-label">Spese trimestrali</div>';
-    SPESE_TRIM_VOCI.forEach(s=>{html+='<div class="spesa-row"><span>'+s.icona+' '+s.nome+'</span><span style="color:#888;font-weight:700">'+fmt(s.importo)+'</span></div>';});
-  }
-  html+='<div class="spesa-row" style="font-weight:700"><span>Tot. spese fisse</span><span style="color:#E24B4A">'+fmt(totFisse)+'</span></div></div>';
-  // Entrate straordinarie
-  const entStr=ENTRATE_STRAORD[mese+1]||[];
-  if(entStr.length>0){
-    html+='<div class="card"><div class="card-title">Entrate straordinarie</div>';
-    entStr.forEach(s=>{html+='<div class="spesa-row"><span>'+s.icona+' '+s.nome+'</span><span style="color:#3B6D11;font-weight:700">+'+fmt(s.importo)+'</span></div>';});
-    html+='<div class="spesa-row" style="font-weight:700"><span>Tot. entrate straord.</span><span style="color:#3B6D11">+'+fmt(entStr.reduce((a,b)=>a+b.importo,0))+'</span></div></div>';
-  }
-  cont.innerHTML=html;
-}
-
-function categorizzaFornitore(f){
-  const u=f.toUpperCase();
-  // ESCLUDI: Logista Italia (tabacchi - giro contabile), LIS Holding e Sisal (aggi giochi)
-  if(u.includes('LOGISTA ITALIA')||u.includes('LIS HOLDING')||u.includes('LIS S.P')||u.includes('SISAL'))return null;
-  // TIENI
-  if(u.includes('LOGISTA RETAIL')||u.includes('ALL TAB'))return 'Tabacchi (trasporto/fornitura)';
-  if(u.includes('CAFFE')||u.includes('COMERO'))return 'Caffè';
-  if(u.includes('PARMALAT'))return 'Latte';
-  if(u.includes('IDEALGEL')||u.includes('SURGEL'))return 'Surgelati/Gelati';
-  if(u.includes('GRANDI'))return 'Bar (forniture)';
-  if(u.includes('MAXI DI')||u.includes('MAULINI')||u.includes('ITALIA ALIMENTARI')||u.includes('PENNY'))return 'Alimentari/Bevande';
-  if(u.includes('FASTWEB'))return 'Telefonia';
-  if(u.includes('NEXI'))return 'Commissioni POS';
-  if(u.includes('ENERGIA')||u.includes('ACQUA NOVARA'))return 'Utenze';
-  if(u.includes('ITAGENCY')||u.includes('UBIFY')||u.includes('LASERVIDEO'))return 'Macchinette/Tech';
-  if(u.includes('PERFETTI')||u.includes('SAN CARLO'))return 'Snack/Dolciumi';
-  if(u.includes('OBI')||u.includes('ECOMAP')||u.includes('ARIANNA'))return 'Manutenzione';
-  if(u.includes('COLOMBARA'))return 'Commercialista';
-  if(u.includes('DFM')||u.includes('JIVEA')||u.includes('CARTOL'))return 'Varie';
-  return 'Varie';
-}
-
-function caricaFatture(input){
-  const file=input.files[0];if(!file)return;
-  const reader=new FileReader();
-  reader.onload=function(e){
-    try{
-      const wb=XLSX.read(e.target.result,{type:'binary'});
-      const ws=wb.Sheets[wb.SheetNames[0]];
-      const data=XLSX.utils.sheet_to_json(ws,{defval:''});
-      const mese=parseInt(document.getElementById('sp-mese').value)+1;
-      const nuoveCat={};
-      data.forEach(row=>{
-        if(!String(row['Tipo documento']||'').includes('Fattura'))return;
-        const fornitore=String(row['Fornitore']||'');
-        const totale=parseFloat(row['Totale'])||0;
-        const dataVal=row['Data'];
-        let m=null;
-        if(typeof dataVal==='number')m=new Date(Math.round((dataVal-25569)*86400*1000)).getMonth()+1;
-        else if(dataVal)m=new Date(dataVal).getMonth()+1;
-        if(m!==mese)return;
-        const cat=categorizzaFornitore(fornitore);
-        if(cat===null)return; // escludi
-        nuoveCat[cat]=(nuoveCat[cat]||0)+totale;
-      });
-      Object.keys(nuoveCat).forEach(k=>nuoveCat[k]=parseFloat(nuoveCat[k].toFixed(2)));
-      SPESE_FATTURE[mese]=nuoveCat;
-      mostraToast('✅ Fatture caricate per '+MESI_NOMI[mese-1],'ok');
-      renderSpeseFisse(mese-1);
-    }catch(err){mostraToast('❌ Errore lettura file','err');}
-    input.value='';
-  };
-  reader.readAsBinaryString(file);
-}
-
-async function caricaSettimane(){
-  const mese=parseInt(document.getElementById('sett-mese').value),anno=document.getElementById('sett-anno').value;
-  const cont=document.getElementById('sett-container');
-  cont.innerHTML='<div class="loading">⏳ Caricamento...</div>';
-  try{
-    const res=await jsonp({action:'leggiMese',mese,anno});
-    renderSettimane(res.righe||[],mese);
-  }catch(e){cont.innerHTML='<div class="empty"><div class="empty-icon">📡</div><p>Errore.</p></div>';}
-}
-
-function renderSettimane(righe,mese){
-  const cont=document.getElementById('sett-container');
-  const attivi=righe.filter(r=>r.note!=='RIPOSO'&&(parseFloat(r.chiusura)||0)>0);
-  if(attivi.length===0){cont.innerHTML='<div class="empty"><div class="empty-icon">📭</div><p>Nessun dato.</p></div>';return;}
-  const settimane=[];
-  attivi.forEach(r=>{
-    const d=new Date(r.data+'T12:00:00');
-    const dow=d.getDay()===0?6:d.getDay()-1;
-    const lun=new Date(d);lun.setDate(d.getDate()-dow);
-    const key=lun.toISOString().slice(0,10);
-    let sett=settimane.find(s=>s.key===key);
-    if(!sett){sett={key,inizio:lun,giorni:[],tot:0};settimane.push(sett);}
-    sett.giorni.push(r);
-    sett.tot+=(parseFloat(r.chiusura)||0)+(parseFloat(r.rik)||0)+(parseFloat(r.pos)||0)+(parseFloat(r.tabacchi)||0);
-  });
-  settimane.sort((a,b)=>a.key.localeCompare(b.key));
-  const maxTot=Math.max(...settimane.map(s=>s.tot),1);
-  const totMese=settimane.reduce((s,w)=>s+w.tot,0);
-  const mediaGiorni={1:[],2:[],3:[],4:[],5:[],6:[]};
-  attivi.forEach(r=>{
-    const dow=new Date(r.data+'T12:00:00').getDay();
-    if(dow>0)mediaGiorni[dow].push((parseFloat(r.chiusura)||0)+(parseFloat(r.rik)||0)+(parseFloat(r.pos)||0)+(parseFloat(r.tabacchi)||0));
-  });
-  let html='<div class="card" style="padding:12px"><div class="stat-grid">';
-  html+='<div class="stat full"><div class="stat-label">Totale '+MESI_NOMI[mese]+'</div><div class="stat-value">'+fmt(totMese)+'</div></div>';
-  html+='<div class="stat"><div class="stat-label">Settimane</div><div class="stat-value">'+settimane.length+'</div></div>';
-  html+='<div class="stat"><div class="stat-label">Media sett.</div><div class="stat-value">'+fmt(totMese/settimane.length)+'</div></div>';
-  html+='</div></div><div class="card"><div class="card-title">Dettaglio settimane</div>';
-  settimane.forEach((sett,i)=>{
-    const fine=new Date(sett.inizio);fine.setDate(fine.getDate()+5);
-    const pct=Math.round((sett.tot/maxTot)*100);
-    const trend=i>0?sett.tot-settimane[i-1].tot:null;
-    const trendHtml=trend!==null?(trend>=0?'<span class="badge-up">▲'+fmt(trend)+'</span>':'<span class="badge-down">▼'+fmt(Math.abs(trend))+'</span>'):'';
-    html+='<div class="sett-card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px"><div><div style="font-size:13px;font-weight:600">Sett. '+(i+1)+' '+trendHtml+'</div><div style="font-size:11px;color:#888">'+sett.inizio.getDate()+'–'+fine.getDate()+' '+MESI_NOMI[mese].slice(0,3)+' · '+sett.giorni.length+' gg · media '+fmt(sett.tot/sett.giorni.length)+'/gg</div></div><div style="font-size:15px;font-weight:700;color:var(--beige)">'+fmt(sett.tot)+'</div></div><div class="sett-bar-bg"><div class="sett-bar-fill" style="width:'+pct+'%"></div></div></div>';
-  });
-  html+='</div><div class="card"><div class="card-title">Media per giorno</div>';
-  const nomiG={1:'Lunedì',2:'Martedì',3:'Mercoledì',4:'Giovedì',5:'Venerdì',6:'Sabato'};
-  const medie=Object.entries(mediaGiorni).map(([d,v])=>({d:parseInt(d),nome:nomiG[d],media:v.length>0?v.reduce((a,b)=>a+b,0)/v.length:0}));
-  const maxM=Math.max(...medie.map(m=>m.media),1);
-  const best=medie.reduce((a,b)=>b.media>a.media?b:a);
-  medie.forEach(m=>{
-    const pct=Math.round((m.media/maxM)*100);
-    html+='<div class="giorno-row"><div style="font-size:14px;font-weight:500">'+m.nome+(m.d===best.d?' 🏆':'')+'</div><div style="flex:1;margin:0 10px"><div class="sett-bar-bg"><div class="sett-bar-fill" style="width:'+pct+'%"></div></div></div><div style="font-size:14px;font-weight:700;color:var(--beige)">'+(m.media>0?fmt(m.media):'—')+'</div></div>';
-  });
-  html+='</div>';
-  cont.innerHTML=html;
-}
-
-let confView='anno';
-function switchConfronto(view,btn){
-  confView=view;
-  document.querySelectorAll('.switch-btn').forEach(b=>b.classList.remove('active'));
-  btn.classList.add('active');
-  document.getElementById('conf-anno-view').style.display=view==='anno'?'block':'none';
-  document.getElementById('conf-mesi-view').style.display=view==='mesi'?'block':'none';
-  document.getElementById('conf-spese-view').style.display=view==='spese'?'block':'none';
-}
-
-async function eseguiConfronto(){
-  if(confView==='anno')await renderConfronto();
-  else if(confView==='mesi')await confrontaMesi();
-  else renderSpeseCategoria();
-}
-
-async function renderConfronto(){
-  const anno=parseInt(document.getElementById('conf-anno').value);
-  const cont=document.getElementById('conf-anno-view');
-  cont.innerHTML='<div class="loading">⏳ Caricamento...</div>';
-  const results=[];
-  for(let i=0;i<12;i++){
-    try{const res=await jsonp({action:'leggiTutto',mese:i,anno});results.push({mese:i,...res});}
-    catch(e){results.push({mese:i,totIncasso:0});}
-  }
-  const conDati=results.filter(m=>(m.totIncasso||0)>0);
-  const totAnno=results.reduce((s,m)=>s+(m.totIncasso||0),0);
-  const maxTot=Math.max(...results.map(m=>m.totIncasso||0),1);
-  const best=conDati.length>0?conDati.reduce((a,b)=>(b.totIncasso||0)>(a.totIncasso||0)?b:a):null;
-  let html='<div class="card" style="padding:12px"><div class="stat-grid"><div class="stat full"><div class="stat-label">Totale anno '+anno+'</div><div class="stat-value">'+fmt(totAnno)+'</div></div></div>';
-  if(best)html+='<div style="font-size:13px;color:#666;text-align:center;padding:4px 0">🏆 Mese migliore: <b>'+MESI_NOMI[best.mese]+'</b> '+fmt(best.totIncasso||0)+'</div>';
-  html+='</div><div class="card"><div class="card-title">Andamento mensile</div>';
-  results.forEach(m=>{
-    const pct=Math.round(((m.totIncasso||0)/maxTot)*100);
-    html+='<div class="bar-row"><div class="bar-label">'+MESI_NOMI[m.mese].slice(0,3)+'</div><div class="bar-bg"><div class="bar-fill" style="width:'+pct+'%"></div></div><div class="bar-val">'+(((m.totIncasso||0)>0)?fmt(m.totIncasso):'—')+'</div></div>';
-  });
-  html+='</div>';
-  if(conDati.length>0){
-    html+='<div class="card"><div class="card-title">Riepilogo per mese</div>';
-    conDati.forEach(m=>{
-      const spese=totSpeseMese(m.mese);
-      const utile=(m.totIncasso||0)-spese;
-      html+='<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid #f5f5f5"><div><div style="font-size:14px;font-weight:600">'+MESI_NOMI[m.mese]+'</div><div style="font-size:11px;color:#888">spese '+fmt(spese)+'</div></div><div style="text-align:right"><div style="font-size:14px;font-weight:700;color:var(--beige)">'+fmt(m.totIncasso||0)+'</div><div style="font-size:12px;font-weight:600;color:'+(utile>=0?'#3B6D11':'#A32D2D')+'">'+(utile>=0?'utile ':'perdita ')+fmt(Math.abs(utile))+'</div></div></div>';
-    });
-    html+='</div>';
-  }
-  cont.innerHTML=html;
-}
-
-async function confrontaMesi(){
-  const meseA=parseInt(document.getElementById('conf-mese-a').value);
-  const meseB=parseInt(document.getElementById('conf-mese-b').value);
-  const anno=parseInt(document.getElementById('conf-anno').value);
-  const cont=document.getElementById('conf-mesi-result');
-  cont.innerHTML='<div class="loading">⏳ Caricamento...</div>';
-  try{
-    const [resA,resB]=await Promise.all([jsonp({action:'leggiTutto',mese:meseA,anno}),jsonp({action:'leggiTutto',mese:meseB,anno})]);
-    const totA=resA.totIncasso||0,totB=resB.totIncasso||0;
-    const speseA=totSpeseMese(meseA),speseB=totSpeseMese(meseB);
-    const utileA=totA-speseA,utileB=totB-speseB;
-    function diffBadge(a,b){const d=a-b,pct=b>0?((a-b)/b*100).toFixed(1):0;if(d>0)return '<span class="badge-up">▲'+fmt(d)+' (+'+pct+'%)</span>';if(d<0)return '<span class="badge-down">▼'+fmt(Math.abs(d))+' ('+pct+'%)</span>';return '<span style="font-size:11px;color:#888">= uguale</span>';}
-    function row(label,a,b,inv){const better=inv?a<b:a>b;const cA=a===b?'#888':better?'#3B6D11':'#A32D2D';const cB=a===b?'#888':better?'#A32D2D':'#3B6D11';return '<div style="display:flex;align-items:center;padding:10px 0;border-bottom:1px solid #f5f5f5"><div style="flex:1;font-size:13px;color:#666">'+label+'</div><div style="font-size:14px;font-weight:700;color:'+cA+';min-width:90px;text-align:right">'+fmt(a)+'</div><div style="font-size:14px;font-weight:700;color:'+cB+';min-width:90px;text-align:right">'+fmt(b)+'</div></div>';}
-    let html='<div class="card" style="padding:12px"><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">';
-    html+='<div style="background:var(--nero);border-radius:12px;padding:12px;text-align:center"><div style="font-size:11px;color:var(--beige);font-weight:600;margin-bottom:4px">'+MESI_NOMI[meseA]+'</div><div style="font-size:20px;font-weight:700;color:#fff">'+fmt(totA)+'</div></div>';
-    html+='<div style="background:var(--beige-pale);border-radius:12px;padding:12px;text-align:center;border:1px solid var(--beige-light)"><div style="font-size:11px;color:#8B6914;font-weight:600;margin-bottom:4px">'+MESI_NOMI[meseB]+'</div><div style="font-size:20px;font-weight:700;color:var(--nero)">'+fmt(totB)+'</div></div>';
-    html+='</div><div style="text-align:center;font-size:13px;color:#666">Differenza: '+diffBadge(totA,totB)+'</div></div>';
-    html+='<div class="card"><div style="display:flex;padding:8px 0;border-bottom:2px solid var(--beige-light);margin-bottom:4px"><div style="flex:1;font-size:12px;font-weight:700;color:#888">VOCE</div><div style="font-size:12px;font-weight:700;color:var(--nero);min-width:90px;text-align:right">'+MESI_NOMI[meseA].slice(0,3).toUpperCase()+'</div><div style="font-size:12px;font-weight:700;color:#8B6914;min-width:90px;text-align:right">'+MESI_NOMI[meseB].slice(0,3).toUpperCase()+'</div></div>';
-    html+=row('Cassa',resA.totCassa||0,resB.totCassa||0);
-    html+=row('Riki',resA.totRik||0,resB.totRik||0);
-    html+=row('POS',resA.totPos||0,resB.totPos||0);
-    html+=row('Tabacchi giorn.',resA.totTab||0,resB.totTab||0);
-    html+=row('Aggi',resA.totAggi||0,resB.totAggi||0);
-    html+=row('Totale incassi',totA,totB);
-    html+=row('Totale spese',speseA,speseB,true);
-    html+='<div style="display:flex;align-items:center;padding:12px 0"><div style="flex:1;font-size:13px;font-weight:700">UTILE NETTO</div><div style="font-size:15px;font-weight:700;color:'+(utileA>=0?'#3B6D11':'#A32D2D')+';min-width:90px;text-align:right">'+fmt(utileA)+'</div><div style="font-size:15px;font-weight:700;color:'+(utileB>=0?'#3B6D11':'#A32D2D')+';min-width:90px;text-align:right">'+fmt(utileB)+'</div></div>';
-    html+='</div>';
-    cont.innerHTML=html;
-  }catch(e){cont.innerHTML='<div class="empty"><div class="empty-icon">📡</div><p>Errore di connessione.</p></div>';}
-}
-
-function renderSpeseCategoria(){
-  const cont=document.getElementById('conf-spese-result');
-  const catPresenti=new Set();
-  for(let m=1;m<=12;m++)Object.keys(SPESE_FATTURE[m]||{}).forEach(k=>catPresenti.add(k));
-  let html='';
-  Array.from(catPresenti).sort().forEach(cat=>{
-    const valori=Array.from({length:12},(_,i)=>(SPESE_FATTURE[i+1]||{})[cat]||0);
-    const totAnno=valori.reduce((a,b)=>a+b,0);
-    if(totAnno===0)return;
-    const col=CAT_COLORS[cat]||'#888';
-    const maxVal=Math.max(...valori,1);
-    const valsConDati=valori.filter(v=>v>0);
-    const meseMax=valori.indexOf(Math.max(...valori));
-    const meseMin=valori.indexOf(Math.min(...valsConDati));
-    const media=valsConDati.length>0?valsConDati.reduce((a,b)=>a+b,0)/valsConDati.length:0;
-    html+='<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><div style="display:flex;align-items:center;gap:8px"><div style="width:12px;height:12px;border-radius:50%;background:'+col+'"></div><div style="font-size:14px;font-weight:700">'+cat+'</div></div><div style="font-size:13px;font-weight:700;color:'+col+'">'+fmt(totAnno)+'/anno</div></div>';
-    html+='<div style="display:flex;gap:3px;align-items:flex-end;height:50px;margin-bottom:4px">';
-    valori.forEach((v,i)=>{const h=v>0?Math.max(Math.round((v/maxVal)*46),3):0;html+='<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end"><div style="height:'+h+'px;width:100%;background:'+col+';opacity:'+(v>0?0.85:0.1)+';border-radius:2px 2px 0 0"></div></div>';});
-    html+='</div><div style="display:flex;margin-bottom:8px">';
-    MESI_NOMI.forEach(m=>{html+='<div style="flex:1;text-align:center;font-size:9px;color:#aaa">'+m.slice(0,1)+'</div>';});
-    html+='</div><div style="font-size:11px;color:#666">📈 Max: <b>'+MESI_NOMI[meseMax]+'</b> '+fmt(valori[meseMax])+' &nbsp;|&nbsp; 📉 Min: <b>'+MESI_NOMI[meseMin]+'</b> '+fmt(valori[meseMin])+' &nbsp;|&nbsp; ⌀ '+fmt(media)+'/mese</div></div>';
-  });
-  cont.innerHTML=html||'<div class="empty"><div class="empty-icon">📭</div><p>Nessun dato spese.</p></div>';
-}
-
-async function caricaAnno(){
-  const anno=document.getElementById('anno-sel').value;
-  const cont=document.getElementById('anno-container');
-  const results=[];
-  for(let i=0;i<12;i++){
-    cont.innerHTML='<div class="loading">⏳ Caricamento '+MESI_NOMI[i]+'... ('+(i+1)+'/12)</div>';
-    try{const res=await jsonp({action:'leggiTutto',mese:i,anno});results.push({mese:i,...res});}
-    catch(e){results.push({mese:i,totIncasso:0,totCassa:0,totRik:0,totAggi:0});}
-  }
-  const conDati=results.filter(m=>(m.totIncasso||0)>0);
-  const totAnno=results.reduce((s,m)=>s+(m.totIncasso||0),0);
-  const speseAnno=conDati.reduce((s,m)=>s+totSpeseMese(m.mese),0);
-  const utileAnno=totAnno-speseAnno;
-  const maxTot=Math.max(...results.map(m=>m.totIncasso||0),1);
-  const best=conDati.length>0?conDati.reduce((a,b)=>(b.totIncasso||0)>(a.totIncasso||0)?b:a):null;
-  let html='<div class="card" style="padding:12px"><div class="stat-grid">';
-  html+='<div class="stat full"><div class="stat-label">Totale incassi '+anno+'</div><div class="stat-value">'+fmt(totAnno)+'</div></div>';
-  html+='<div class="stat danger"><div class="stat-label">Tot. spese stimate</div><div class="stat-value">'+fmt(speseAnno)+'</div></div>';
-  html+='<div class="stat '+(utileAnno>=0?'positive':'danger')+' full"><div class="stat-label">UTILE NETTO ANNO '+anno+'</div><div class="stat-value">'+(utileAnno>=0?'+':'')+fmt(utileAnno)+'</div></div>';
-  html+='</div>'+(best?'<div style="font-size:13px;color:#666;text-align:center;padding:4px 0">🏆 Mese migliore: <b>'+MESI_NOMI[best.mese]+'</b> '+fmt(best.totIncasso||0)+'</div>':'')+'</div>';
-  html+='<div class="card"><div class="card-title">Andamento mensile</div>';
-  results.forEach(m=>{const pct=Math.round(((m.totIncasso||0)/maxTot)*100);html+='<div class="bar-row"><div class="bar-label">'+MESI_NOMI[m.mese].slice(0,3)+'</div><div class="bar-bg"><div class="bar-fill" style="width:'+pct+'%"></div></div><div class="bar-val">'+((m.totIncasso||0)>0?fmt(m.totIncasso):'—')+'</div></div>';});
-  html+='</div>';
-  if(conDati.length>0){
-    html+='<div class="card"><div class="card-title">Riepilogo per mese</div>';
-    conDati.forEach(m=>{const spese=totSpeseMese(m.mese);const utile=(m.totIncasso||0)-spese;html+='<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid #f5f5f5"><div><div style="font-size:14px;font-weight:600">'+MESI_NOMI[m.mese]+'</div><div style="font-size:11px;color:#888">spese '+fmt(spese)+'</div></div><div style="text-align:right"><div style="font-size:14px;font-weight:700;color:var(--beige)">'+fmt(m.totIncasso||0)+'</div><div style="font-size:12px;font-weight:600;color:'+(utile>=0?'#3B6D11':'#A32D2D')+'">'+(utile>=0?'utile ':'perdita ')+fmt(Math.abs(utile))+'</div></div></div>';});
-    html+='</div>';
-  }
-  cont.innerHTML=html;
-}
-
-function generaPDF(){
-  const mese=parseInt(document.getElementById('sel-mese').value);
-  const anno=document.getElementById('sel-anno').value;
-  const righe=ultimoMeseDati;
-  if(!righe||righe.length===0){mostraToast('❌ Carica prima i dati del mese','err');return;}
-  const totC=righe.reduce((s,r)=>s+(parseFloat(r.chiusura)||0),0);
-  const totR=righe.reduce((s,r)=>s+(parseFloat(r.rik)||0),0);
-  const iva=totC/11;const impo=totC-iva;
-  const hasPT=mese>=MESE_INIZIO_POS;
-  const sorted=[...righe].sort((a,b)=>a.data.localeCompare(b.data));
-  let righeHTML='';
-  sorted.forEach(r=>{
-    const isR=r.note==='RIPOSO';
-    righeHTML+='<tr style="'+(isR?'color:#aaa':'')+'"><td>'+r.data.slice(8)+'</td><td>'+(r.giorno||'')+'</td><td>'+(isR?'—':fmt(parseFloat(r.chiusura)||0))+'</td><td>'+(isR?'—':(parseFloat(r.rik)||0)>0?fmt(parseFloat(r.rik)):'-')+'</td>'+(hasPT?'<td>'+(isR?'—':(parseFloat(r.pos)||0)>0?fmt(parseFloat(r.pos)):'-')+'</td><td>'+(isR?'—':(parseFloat(r.tabacchi)||0)>0?fmt(parseFloat(r.tabacchi)):'-')+'</td>':'')+'<td style="font-size:11px">'+(r.note&&r.note!=='RIPOSO'?r.note:'')+'</td></tr>';
-  });
-  const w=window.open('','_blank');
-  w.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Report '+MESI_NOMI[mese]+' '+anno+'</title><style>body{font-family:Arial,sans-serif;padding:30px;font-size:13px}h1{font-size:20px}table{width:100%;border-collapse:collapse;margin-top:12px}th{background:#1a1410;color:#fff;padding:7px 10px;text-align:left;font-size:11px}td{padding:6px 10px;border-bottom:1px solid #f0f0f0}@media print{button{display:none}}</style></head><body>');
-  w.document.write('<h1>Bar Sempioncino — '+MESI_NOMI[mese]+' '+anno+'</h1>');
-  w.document.write('<p>Cassa: '+fmt(totC)+' | Imponibile: '+fmt(impo)+' | IVA 10%: '+fmt(iva)+' | Riki: '+fmt(totR)+'</p>');
-  w.document.write('<table><thead><tr><th>Gg</th><th>Giorno</th><th>Cassa</th><th>Riki</th>'+(hasPT?'<th>POS</th><th>Tab.</th>':'')+'<th>Note</th></tr></thead><tbody>'+righeHTML+'</tbody></table>');
-  w.document.write('<br><button onclick="window.print()" style="padding:10px 20px;background:#1a1410;color:#fff;border:none;border-radius:8px;cursor:pointer">🖨️ Stampa PDF</button>');
-  w.document.write('</body></html>');
-  w.document.close();
-}
-
-// Init spese
-renderSpeseFisse(new Date().getMonth());
-</script>
 <div id="page-eventi" class="page">
   <div class="card" style="padding:12px">
     <div class="card-title">🎉 Eventi</div>
@@ -3900,7 +2633,44 @@ renderSpeseFisse(new Date().getMonth());
   </div>
 </div>
 
-<div id="modal-giorno" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:999;align-items:flex-end;justify-content:center">
+<div id="page-impostazioni" class="page">
+  <div class="card" style="padding:14px;margin-bottom:8px">
+    <div class="card-title">🎯 Soglie battuto mensile</div>
+    <div class="field"><label>Obiettivo mensile (€)</label>
+      <input type="number" id="set-obiettivo" inputmode="decimal" onchange="salvaImpostazione('obiettivo_battuto',this.value)"></div>
+    <div class="field"><label>🟢 Verde — battuto da (€)</label>
+      <input type="number" id="set-verde" inputmode="decimal" onchange="salvaImpostazione('soglia_verde',this.value)"></div>
+    <div class="field"><label>🟡 Giallo — battuto da (€)</label>
+      <input type="number" id="set-gialla" inputmode="decimal" onchange="salvaImpostazione('soglia_gialla',this.value)"></div>
+    <div class="field"><label>⚠️ Alert giornaliero sotto (€)</label>
+      <input type="number" id="set-giornaliero" inputmode="decimal" onchange="salvaImpostazione('obiettivo_giornaliero',this.value)"></div>
+  </div>
+  <div class="card" style="padding:14px;margin-bottom:8px">
+    <div class="card-title">📊 Parametri calcolo</div>
+    <div class="field"><label>Ricarico atteso bar (×)</label>
+      <input type="number" id="set-ricarico" step="0.1" inputmode="decimal" onchange="salvaImpostazione('ricarico_atteso',this.value)"></div>
+    <div class="field"><label>Giorni lavorativi mensili</label>
+      <input type="number" id="set-giorni" inputmode="decimal" onchange="salvaImpostazione('giorni_lavorativi',this.value)"></div>
+    <div class="field"><label>Aggi medi mensili (€)</label>
+      <input type="number" id="set-aggi" inputmode="decimal" onchange="salvaImpostazione('aggi_medi',this.value)"></div>
+    <div class="field"><label>Fatture bar stima (€)</label>
+      <input type="number" id="set-fatture" inputmode="decimal" onchange="salvaImpostazione('fatture_bar_media',this.value)"></div>
+  </div>
+  <div class="card" style="padding:14px;margin-bottom:8px">
+    <div class="card-title">💸 Spese fisse mensili</div>
+    <div id="imp-spese-fisse-editor"></div>
+  </div>
+  <div class="card" style="padding:14px;margin-bottom:8px">
+    <div class="card-title">🔔 Notifiche</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0">
+      <label style="font-size:14px">Alert battuto basso giornaliero</label>
+      <input type="checkbox" id="set-alert" onchange="salvaImpostazione('alert_giornaliero',this.checked)" style="width:20px;height:20px;cursor:pointer">
+    </div>
+  </div>
+  <button onclick="resetImpostazioni()" style="width:100%;padding:12px;background:#f5f5f5;border:1px solid #ddd;border-radius:12px;font-size:13px;color:#888;cursor:pointer;margin-bottom:16px">↺ Ripristina impostazioni predefinite</button>
+</div>
+
+<div id="modal-giorno"  style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:999;align-items:flex-end;justify-content:center">
   <div style="background:#fff;border-radius:20px 20px 0 0;padding:24px;width:100%;max-height:85vh;overflow-y:auto">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
       <div style="font-size:16px;font-weight:800;color:#1a1410" id="modal-giorno-title">Modifica giornata</div>
