@@ -1615,23 +1615,25 @@ async function caricaSpeseDaSheet(){
 
 // ===== Salvataggio chiusura giornaliera (pagina Inserisci) =====
 async function salva(){
-  console.log('salva() chiamata');
   const btn = document.getElementById('btn-salva');
-  const data = document.getElementById('inp-data') ? document.getElementById('inp-data').value : '';
-  console.log('data:', data);
-  if(!data){ mostraToast('⚠️ Seleziona una data','err'); return; }
-  const d = new Date(data+'T12:00:00');
-  const mese = d.getMonth();
-  const anno = d.getFullYear();
-  const riposo = document.getElementById('inp-riposo').checked;
-  const chiusura = parseFloat(document.getElementById('inp-chiusura').value)||0;
-  const riccardo = parseFloat(document.getElementById('inp-riccardo').value)||0;
-  const ubify = parseFloat(document.getElementById('inp-ubify').value)||0;
-  const tabEl = document.getElementById('inp-tabacchi');
-  const tabacchi = tabEl ? (parseFloat(tabEl.value)||0) : 0;
-  const note = document.getElementById('inp-note').value;
+  // Feedback immediato
   if(btn){ btn.disabled = true; btn.textContent = '⏳ Salvataggio...'; }
+  mostraToast('⏳ Salvataggio in corso...','ok');
   try{
+    const inpData = document.getElementById('inp-data');
+    const data = inpData ? inpData.value : '';
+    if(!data){ mostraToast('⚠️ Seleziona una data','err'); return; }
+    const d = new Date(data+'T12:00:00');
+    const mese = d.getMonth();
+    const anno = d.getFullYear();
+    const riposo = document.getElementById('inp-riposo') ? document.getElementById('inp-riposo').checked : false;
+    const chiusura = parseFloat(document.getElementById('inp-chiusura').value)||0;
+    const riccardo = parseFloat(document.getElementById('inp-riccardo').value)||0;
+    const ubify = parseFloat(document.getElementById('inp-ubify').value)||0;
+    const tabEl = document.getElementById('inp-tabacchi');
+    const tabacchi = tabEl ? (parseFloat(tabEl.value)||0) : 0;
+    const noteEl = document.getElementById('inp-note');
+    const note = noteEl ? noteEl.value : '';
     await jsonp({
       action:'salvaRiga', mese, anno, data,
       giorno: GIORNI[d.getDay()],
@@ -1645,25 +1647,23 @@ async function salva(){
     });
     mostraToast('✅ Salvato!','ok');
     const totGiornaliero = riposo?0:(chiusura+ubify);
-    if(!riposo && totGiornaliero>0 && getImpostazione('alert_giornaliero') && totGiornaliero<getImpostazione('obiettivo_giornaliero')){
-      setTimeout(()=>{ mostraToast('⚠️ TROPPO POCO! Battuto €'+totGiornaliero.toFixed(0)+' — obiettivo €'+getImpostazione('obiettivo_giornaliero')+'/giorno','err'); }, 1500);
+    if(!riposo && totGiornaliero>0 && totGiornaliero<getImpostazione('obiettivo_giornaliero')){
+      setTimeout(()=>{ mostraToast('⚠️ Battuto €'+totGiornaliero.toFixed(0)+' — obiettivo €'+getImpostazione('obiettivo_giornaliero')+'/giorno','err'); }, 1500);
     }
-    // Reset campi (tranne data, che avanza di un giorno)
-    document.getElementById('inp-chiusura').value='';
-    document.getElementById('inp-riccardo').value='';
-    document.getElementById('inp-ubify').value='';
+    // Reset campi, data avanza di un giorno
+    if(document.getElementById('inp-chiusura')) document.getElementById('inp-chiusura').value='';
+    if(document.getElementById('inp-riccardo')) document.getElementById('inp-riccardo').value='';
+    if(document.getElementById('inp-ubify')) document.getElementById('inp-ubify').value='';
     if(tabEl) tabEl.value='';
-    document.getElementById('inp-note').value='';
-    document.getElementById('inp-riposo').checked=false;
+    if(noteEl) noteEl.value='';
+    if(document.getElementById('inp-riposo')) document.getElementById('inp-riposo').checked=false;
     const nd = new Date(d); nd.setDate(nd.getDate()+1);
-    document.getElementById('inp-data').value = nd.toISOString().slice(0,10);
-    document.getElementById('inp-giorno').value = GIORNI[nd.getDay()];
-    // Aggiorna mini-andamento e lista se presenti
-    caricaMiniAndamento();
-    if(typeof caricaLista==='function'){ try{ caricaLista(); }catch(e){} }
+    if(inpData) inpData.value = nd.toISOString().slice(0,10);
+    const inpGiorno = document.getElementById('inp-giorno');
+    if(inpGiorno) inpGiorno.value = GIORNI[nd.getDay()];
+    setTimeout(caricaMiniAndamento, 300);
   }catch(e){
-    console.error('Errore salva():', e);
-    mostraToast('❌ Errore: '+e.message,'err');
+    mostraToast('❌ Errore salvataggio: '+(e.message||'riprova'),'err');
   } finally {
     if(btn){ btn.disabled = false; btn.textContent = '💾 Salva su Google Sheets'; }
   }
@@ -1678,7 +1678,10 @@ async function caricaMiniAndamento(){
   const anno = oggi.getFullYear();
   cont.innerHTML = '<div class="loading">⏳ Caricamento...</div>';
   try{
-    const res = await jsonp({action:'leggiTutto', mese, anno});
+    const res = await Promise.race([
+      jsonp({action:'leggiTutto', mese, anno}),
+      new Promise((_,rej)=>setTimeout(()=>rej(new Error('Timeout')),10000))
+    ]);
     const righe = res.righe || res.dati || [];
     let totBattuto = 0;
     let giorniAperti = 0;
