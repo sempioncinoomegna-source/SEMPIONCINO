@@ -140,6 +140,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       </div>
     </div>
   </div>
+  <div class="card" id="mini-andamento-card" style="padding:14px;margin-bottom:8px">
+    <div class="card-title">📊 Andamento mese in corso</div>
+    <div id="mini-andamento-content"><div class="loading">⏳ Caricamento...</div></div>
+  </div>
   <div class="card">
     <div class="card-title">Inserisci chiusura</div>
     <div class="row2">
@@ -163,10 +167,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       <label for="inp-riposo">Giorno di riposo</label>
     </div>
     <button class="btn-save" id="btn-salva" onclick="salva()">💾 Salva su Google Sheets</button>
-  </div>
-  <div class="card" id="mini-andamento-card" style="padding:14px;margin-top:8px">
-    <div class="card-title">📊 Andamento mese in corso</div>
-    <div id="mini-andamento-content"><div class="loading">⏳ Caricamento...</div></div>
   </div>
 </div>
 
@@ -256,7 +256,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <div class="card-title">📊 Seleziona mese</div>
     <div class="row2">
       <div class="field"><label>Mese</label>
-        <select id="and-mese" onchange="caricaAndamento()">
+        <select id="and-mese" onchange="caricaAndamento();aggiornaObiettivoMese()">
           <option value="0">Gennaio</option><option value="1">Febbraio</option>
           <option value="2">Marzo</option><option value="3">Aprile</option>
           <option value="4">Maggio</option><option value="5">Giugno</option>
@@ -266,11 +266,20 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
         </select>
       </div>
       <div class="field"><label>Anno</label>
-        <select id="and-anno" onchange="caricaAndamento()">
+        <select id="and-anno" onchange="caricaAndamento();aggiornaObiettivoMese()">
           <option value="2026">2026</option><option value="2025">2025</option>
         </select>
       </div>
     </div>
+  </div>
+  <div class="card" style="padding:12px;margin-bottom:8px">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+      <label style="font-size:13px;font-weight:600;color:#555;white-space:nowrap">🎯 Obiettivo questo mese (€)</label>
+      <input type="number" id="and-obiettivo-mese" inputmode="decimal" step="100"
+        style="width:130px;padding:8px;border:2px solid #ddd;border-radius:10px;font-size:15px;font-weight:700;text-align:right"
+        onchange="salvaObiettivoMese(this.value)" placeholder="default">
+    </div>
+    <div style="font-size:11px;color:#aaa;margin-top:4px">Lascia vuoto per usare il default (€<span id="and-obiettivo-default"></span>)</div>
   </div>
   <button onclick="controlloFattureIncasso()" class="btn-save" style="margin-bottom:8px;background:#1a1410">
     📋 CONTROLLO FATTURE / INCASSO
@@ -1101,7 +1110,7 @@ async function caricaAndamento() {
     const oggi = new Date();
     const meseOggi = oggi.getMonth();
     const annoOggi = oggi.getFullYear();
-    const obiettivoMensile = getImpostazione('obiettivo_battuto');
+    const obiettivoMensile = getObiettivoMese(mese, anno);
     let obiettivoRif = obiettivoMensile;
     let labelObiettivo = fmt(obiettivoMensile);
     let notaGiorno = '';
@@ -1125,12 +1134,14 @@ async function caricaAndamento() {
         <div style="font-size:13px;font-weight:700;color:${colBatt}">${semBatt}</div>
       </div>
       <div style="font-size:30px;font-weight:800;color:${colBatt};margin-bottom:8px">${fmt(battuto)}</div>
-      <div style="background:#f0f0f0;border-radius:8px;height:16px;overflow:hidden;margin-bottom:6px">
-        <div style="width:${pct}%;height:100%;background:${colBatt};border-radius:8px;transition:width 0.5s"></div>
+      <div style="position:relative;background:#f0f0f0;border-radius:8px;height:16px;overflow:hidden;margin-bottom:6px">
+        <div style="width:${pctBattuto}%;height:100%;background:${colBatt};border-radius:8px 0 0 8px;transition:width 0.5s"></div>
+        <div style="position:absolute;top:0;left:${pctPercorso}%;width:2px;height:100%;background:#bbb"></div>
       </div>
-      <div style="display:flex;justify-content:space-between;font-size:11px;color:#888">
-        <span>€0</span><span>Obiettivo: ${labelObiettivo}${notaGiorno}</span>
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:#888;margin-bottom:4px">
+        <span>€0</span><span>Obiettivo: ${fmt(obiettivoMensile)}</span>
       </div>
+      <div style="font-size:12px;color:${colBatt};font-weight:600">${semBatt} — mancano €${fmt(mancaAlObiettivo)} in ${giorniMancanti} giorni</div>
       ${totUbify>0?`<div style="font-size:12px;color:#555;margin-top:6px">☕ Cassa ${fmt(totCassa)} + 🎰 Ubify ${fmt(totUbify)}</div>`:''}
     </div>`;
 
@@ -1219,6 +1230,7 @@ async function caricaAndamento() {
     </div>`;
 
     cont.innerHTML = html;
+    aggiornaObiettivoMese();
   } catch(e) {
     cont.innerHTML = '<div class="empty"><div class="empty-icon">📡</div><p>Errore connessione. Riprova.</p></div>';
   }
@@ -1603,8 +1615,10 @@ async function caricaSpeseDaSheet(){
 
 // ===== Salvataggio chiusura giornaliera (pagina Inserisci) =====
 async function salva(){
+  console.log('salva() chiamata');
   const btn = document.getElementById('btn-salva');
-  const data = document.getElementById('inp-data').value;
+  const data = document.getElementById('inp-data') ? document.getElementById('inp-data').value : '';
+  console.log('data:', data);
   if(!data){ mostraToast('⚠️ Seleziona una data','err'); return; }
   const d = new Date(data+'T12:00:00');
   const mese = d.getMonth();
@@ -1648,7 +1662,8 @@ async function salva(){
     caricaMiniAndamento();
     if(typeof caricaLista==='function'){ try{ caricaLista(); }catch(e){} }
   }catch(e){
-    mostraToast('❌ Errore salvataggio','err');
+    console.error('Errore salva():', e);
+    mostraToast('❌ Errore: '+e.message,'err');
   } finally {
     if(btn){ btn.disabled = false; btn.textContent = '💾 Salva su Google Sheets'; }
   }
@@ -1682,20 +1697,27 @@ async function caricaMiniAndamento(){
     const giornoDelMese = oggi.getDate();
     const giorniTotaliMese = new Date(anno, mese+1, 0).getDate();
     // Obiettivo atteso ad oggi = obiettivo mensile proporzionato ai giorni del mese già trascorsi
-    const obiettivoAtteso = Math.round(obiettivoMese * (giornoDelMese / giorniTotaliMese));
-    const pct = obiettivoAtteso>0 ? Math.min(100, Math.round(totBattuto/obiettivoAtteso*100)) : 0;
+    const obiettivoAtteso = Math.round(obiettivoMese * giornoDelMese / giorniTotaliMese);
+    const pctPercorso = Math.round(giornoDelMese / giorniTotaliMese * 100);
+    const pctBattuto = Math.min(pctPercorso, Math.round(totBattuto / obiettivoMese * 100));
     const inLinea = totBattuto >= obiettivoAtteso;
-    const colore = inLinea ? '#1D9E75' : (pct>=80 ? '#F59E0B' : '#E24B4A');
-    const stato = inLinea ? '🟢 IN LINEA' : (pct>=80 ? '🟡 VICINO' : '🔴 INDIETRO');
+    const colore = inLinea ? '#1D9E75' : (totBattuto >= obiettivoAtteso*0.85 ? '#F59E0B' : '#E24B4A');
+    const stato = inLinea ? '🟢 IN LINEA' : (totBattuto >= obiettivoAtteso*0.85 ? '🟡 VICINO' : '🔴 INDIETRO');
+    const mancaAlObiettivo = Math.max(0, obiettivoMese - totBattuto);
+    const giorniMancanti = giorniTotaliMese - giornoDelMese;
     cont.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-        <span style="font-weight:700;font-size:15px">€${totBattuto.toFixed(0)}</span>
+        <span style="font-weight:700;font-size:22px;color:${colore}">€${fmt(totBattuto)}</span>
         <span style="color:${colore};font-weight:700;font-size:13px">${stato}</span>
       </div>
-      <div style="background:#eee;border-radius:8px;height:10px;overflow:hidden;margin-bottom:6px">
-        <div style="background:${colore};height:100%;width:${pct}%"></div>
+      <div style="position:relative;background:#f0f0f0;border-radius:8px;height:14px;overflow:hidden;margin-bottom:6px">
+        <div style="width:${pctBattuto}%;height:100%;background:${colore};border-radius:8px 0 0 8px;transition:width 0.5s"></div>
+        <div style="position:absolute;top:0;left:${pctPercorso}%;width:2px;height:100%;background:#bbb"></div>
       </div>
-      <div style="font-size:12px;color:#777">Giorno ${giornoDelMese} di ${giorniTotaliMese} — atteso ad oggi: €${obiettivoAtteso.toFixed(0)} (obiettivo mese: €${obiettivoMese.toFixed(0)})</div>
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:#888;margin-bottom:4px">
+        <span>€0</span><span>Obiettivo: €${fmt(obiettivoMese)}</span>
+      </div>
+      <div style="font-size:12px;color:${colore};font-weight:600">${stato} — mancano €${fmt(mancaAlObiettivo)} in ${giorniMancanti} giorni</div>
     `;
   }catch(e){
     cont.innerHTML = '<div style="color:#888;text-align:center">❌ Errore caricamento</div>';
@@ -1709,6 +1731,60 @@ caricaMiniAndamento();
     contS.innerHTML=htmlS;
   }catch(e){
     contS.innerHTML='<div class="card" style="padding:14px"><div style="color:#888;text-align:center">❌ Errore caricamento. Riprova.</div></div>';
+  }
+}
+
+
+(function(){try{var k='sempioncino_eventi';var s=localStorage.getItem(k);var p=s?JSON.parse(s):[];if(!p.some(function(e){return e.id==='birra_w1';})){var n=[{"id": "birra_w1", "nome": "Festa Birra W1", "date": "26-27 set 2026", "incasso": 9785.8, "cassa": 2795.8, "ubify": 0, "riki": 6990.0, "costo": 5283.96, "voci_costo": [{"nome": "Birra 45 fusti x60", "importo": 2700.0, "fatturata": true}, {"nome": "Birra extra", "importo": 600.0, "fatturata": true}, {"nome": "Fusti Maulini CO2", "importo": 320.07, "fatturata": true}, {"nome": "Bicchieri f44", "importo": 101.89, "fatturata": true}, {"nome": "Bicchieri f47", "importo": 126.0, "fatturata": true}, {"nome": "Bicchieri f48", "importo": 36.0, "fatturata": true}, {"nome": "Erika W1", "importo": 150.0, "fatturata": false}, {"nome": "Stefania W1", "importo": 100.0, "fatturata": false}, {"nome": "Alessandro W1", "importo": 150.0, "fatturata": false}, {"nome": "Extra W1", "importo": 1000.0, "fatturata": false}], "spesa": [], "note": ""}, {"id": "birra_w2", "nome": "Festa Birra W2", "date": "3-4 ott 2026", "incasso": 7091.5, "cassa": 2591.5, "ubify": 0, "riki": 4500.0, "costo": 1250.0, "voci_costo": [{"nome": "Stefania W2", "importo": 100.0, "fatturata": false}, {"nome": "Alessandro W2", "importo": 150.0, "fatturata": false}, {"nome": "Extra W2", "importo": 1000.0, "fatturata": false}], "spesa": [], "note": ""}];localStorage.setItem(k,JSON.stringify(n.concat(p.filter(function(e){return e.id!=='birra_w1'&&e.id!=='birra_w2';}))));setTimeout(function(){n.forEach(function(ev){if(typeof salvaEventoSheet==='function')salvaEventoSheet(ev);});},3000);}}catch(ex){}})();
+
+
+// ===== Obiettivo mensile personalizzato — salvato su Google Sheet =====
+// Cache locale per evitare troppe chiamate al server
+const _obiettiviMeseCache = {};
+
+function getObiettivoMese(mese, anno) {
+  const k = anno + '_' + mese;
+  if(_obiettiviMeseCache[k] !== undefined) return _obiettiviMeseCache[k];
+  return getImpostazione('obiettivo_battuto');
+}
+
+async function salvaObiettivoMese(valore) {
+  const mese = parseInt(document.getElementById('and-mese').value);
+  const anno = document.getElementById('and-anno').value;
+  const k = anno + '_' + mese;
+  const v = (!valore || valore==='') ? '' : parseFloat(valore);
+  // Aggiorna cache locale subito
+  if(v === '') { delete _obiettiviMeseCache[k]; }
+  else { _obiettiviMeseCache[k] = v; }
+  try {
+    await jsonp({action:'salvaObiettivoMese', mese, anno, valore: v===''?0:v, reset: v===''?'1':'0'});
+    mostraToast('✅ Obiettivo salvato!', 'ok');
+  } catch(e) {
+    mostraToast('❌ Errore salvataggio', 'err');
+  }
+  caricaAndamento();
+}
+
+async function aggiornaObiettivoMese() {
+  const mese = parseInt(document.getElementById('and-mese').value);
+  const anno = document.getElementById('and-anno').value;
+  const inp = document.getElementById('and-obiettivo-mese');
+  const def = document.getElementById('and-obiettivo-default');
+  const defaultVal = getImpostazione('obiettivo_battuto');
+  if(def) def.textContent = fmt(defaultVal);
+  // Carica dal server
+  try {
+    const res = await jsonp({action:'leggiObiettivoMese', mese, anno});
+    const k = anno + '_' + mese;
+    if(res.valore && res.valore > 0) {
+      _obiettiviMeseCache[k] = res.valore;
+      if(inp) inp.value = res.valore;
+    } else {
+      delete _obiettiviMeseCache[k];
+      if(inp) inp.value = '';
+    }
+  } catch(e) {
+    if(inp) inp.value = '';
   }
 }
 </script>
@@ -1834,5 +1910,4 @@ caricaMiniAndamento();
   </div>
 </div>
 </body>
-</html>(function(){try{var k='sempioncino_eventi';var s=localStorage.getItem(k);var p=s?JSON.parse(s):[];if(!p.some(function(e){return e.id==='birra_w1';})){var n=[{"id": "birra_w1", "nome": "Festa Birra W1", "date": "26-27 set 2026", "incasso": 9785.8, "cassa": 2795.8, "ubify": 0, "riki": 6990.0, "costo": 5283.96, "voci_costo": [{"nome": "Birra 45 fusti x60", "importo": 2700.0, "fatturata": true}, {"nome": "Birra extra", "importo": 600.0, "fatturata": true}, {"nome": "Fusti Maulini CO2", "importo": 320.07, "fatturata": true}, {"nome": "Bicchieri f44", "importo": 101.89, "fatturata": true}, {"nome": "Bicchieri f47", "importo": 126.0, "fatturata": true}, {"nome": "Bicchieri f48", "importo": 36.0, "fatturata": true}, {"nome": "Erika W1", "importo": 150.0, "fatturata": false}, {"nome": "Stefania W1", "importo": 100.0, "fatturata": false}, {"nome": "Alessandro W1", "importo": 150.0, "fatturata": false}, {"nome": "Extra W1", "importo": 1000.0, "fatturata": false}], "spesa": [], "note": ""}, {"id": "birra_w2", "nome": "Festa Birra W2", "date": "3-4 ott 2026", "incasso": 7091.5, "cassa": 2591.5, "ubify": 0, "riki": 4500.0, "costo": 1250.0, "voci_costo": [{"nome": "Stefania W2", "importo": 100.0, "fatturata": false}, {"nome": "Alessandro W2", "importo": 150.0, "fatturata": false}, {"nome": "Extra W2", "importo": 1000.0, "fatturata": false}], "spesa": [], "note": ""}];localStorage.setItem(k,JSON.stringify(n.concat(p.filter(function(e){return e.id!=='birra_w1'&&e.id!=='birra_w2';}))));setTimeout(function(){n.forEach(function(ev){if(typeof salvaEventoSheet==='function')salvaEventoSheet(ev);});},3000);}}catch(ex){}})();
-
+</html>
