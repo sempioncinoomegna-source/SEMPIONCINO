@@ -407,7 +407,6 @@ async function getAppData(mese, anno) {
   const key = anno + '_' + mese;
   if (_appCache[key]) return _appCache[key];
   if (_cacheLoading === key) {
-    // Aspetta che la chiamata in corso finisca
     return new Promise(resolve => _cacheCallbacks.push({key, resolve}));
   }
   _cacheLoading = key;
@@ -416,8 +415,23 @@ async function getAppData(mese, anno) {
       jsonp({action:'leggiTuttoApp', mese, anno}),
       new Promise((_,rej)=>setTimeout(()=>rej(new Error('Timeout')),15000))
     ]);
+    // Calcola i totali dalle righe raw (compatibile con caricaAndamento)
+    const righe = res.righe || [];
+    let totCassa=0, totUbify=0, totRik=0, totTab=0, giorniAperti=0;
+    righe.forEach(r=>{
+      if(r.riposo==='1'||r.riposo===1||r.riposo===true) return;
+      totCassa  += parseFloat(r.chiusura)||0;
+      totUbify  += parseFloat(r.ubify)||0;
+      totRik    += parseFloat(r.riccardo)||0;
+      totTab    += parseFloat(r.tabacchi)||0;
+      giorniAperti++;
+    });
+    res.totCassa = totCassa;
+    res.totUbify = totUbify;
+    res.totRik   = totRik;
+    res.totTab   = totTab;
+    res.giorniAperti = giorniAperti;
     _appCache[key] = res;
-    // Sveglia chi stava aspettando
     _cacheCallbacks.filter(c=>c.key===key).forEach(c=>c.resolve(res));
     _cacheCallbacks = _cacheCallbacks.filter(c=>c.key!==key);
     return res;
@@ -790,7 +804,13 @@ function showPage(id,btn){
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
   document.getElementById('page-'+id).classList.add('active');
   btn.classList.add('active');
-  if(id==='lista')caricaMese();
+  if(id==='lista'){
+    const oggi=new Date();
+    const sm=document.getElementById('sel-mese');
+    const sa=document.getElementById('sel-anno');
+    if(sm && !sm.dataset.init){ sm.value=oggi.getMonth(); if(sa) sa.value=oggi.getFullYear(); sm.dataset.init='1'; }
+    caricaMese();
+  }
   if(id==='settimane')caricaSettimane();
   if(id==='spese')caricaSpeseDaSheet();
   if(id==='aggi')document.getElementById('aggi-riepilogo').innerHTML='<div class="card"><p style="color:#888;font-size:14px;text-align:center;padding:8px">Clicca ↻ per caricare il riepilogo aggi</p></div>';
@@ -924,7 +944,10 @@ function renderEventi() {
           <div style="font-size:16px;font-weight:700">${ev.nome}</div>
           <div style="font-size:12px;color:#888">${ev.date}</div>
         </div>
-        <button onclick="eliminaEvento(${idx})" style="background:#fee;border:none;border-radius:8px;padding:4px 8px;color:#c00;cursor:pointer;font-size:12px">🗑️</button>
+        <div style="display:flex;gap:6px">
+          <button onclick="apriDettaglioEvento(${idx})" style="background:#D4A843;border:none;border-radius:8px;padding:4px 12px;color:#1a1410;cursor:pointer;font-size:12px;font-weight:700">📂 Apri</button>
+          <button onclick="eliminaEvento(${idx})" style="background:#fee;border:none;border-radius:8px;padding:4px 8px;color:#c00;cursor:pointer;font-size:12px">🗑️</button>
+        </div>
       </div>`;
 
     // Incasso
@@ -1134,6 +1157,7 @@ async function caricaAndamento() {
     // Spese totali
     const utenzeReali = fatUtenze > 0 ? fatUtenze : 1000;
     const speseFisse = TOT_FISSE_AND - 1000 + utenzeReali; // sostituisce stima utenze
+    // ALL TAB, ITagency, Logista Retail sono già in fatBar (categorie Tabacchi trasporto + Cartine)
     const speseBar = fatBar > 0 ? fatBar : FATTURE_BAR_MEDIA;
     const totSpese = speseFisse + speseBar + fatAltro;
     const utileFiscale = incFiscale - totSpese;
@@ -1303,8 +1327,8 @@ function aggiornaFissa(nome, valore) {
   const fisse = getSpeseFisseAnd();
   fisse[nome] = parseFloat(valore)||0;
   saveSpeseFisseAnd(fisse);
-  const tot = Object.values(fisse).reduce((a,b)=>a+b,0);
   mostraToast('✅ Salvato!','ok');
+  caricaAndamento();
 }
 
 function rimuoviFissa(nome) {
@@ -1312,6 +1336,7 @@ function rimuoviFissa(nome) {
   const fisse = getSpeseFisseAnd();
   delete fisse[nome];
   saveSpeseFisseAnd(fisse);
+  caricaAndamento();
   renderSpeseFisseEditor();
   mostraToast('✅ Voce rimossa','ok');
 }
@@ -1779,6 +1804,12 @@ const _obiettiviMeseCache = {};
 function getObiettivoMese(mese, anno) {
   const k = anno + '_' + mese;
   if(_obiettiviMeseCache[k] !== undefined) return _obiettiviMeseCache[k];
+  // Prova anche dalla cache app (obiettivoMese restituito da leggiTuttoApp)
+  const cacheKey = anno + '_' + mese;
+  if(_appCache[cacheKey] && _appCache[cacheKey].obiettivoMese > 0) {
+    _obiettiviMeseCache[k] = _appCache[cacheKey].obiettivoMese;
+    return _obiettiviMeseCache[k];
+  }
   return getImpostazione('obiettivo_battuto');
 }
 
@@ -1792,9 +1823,14 @@ async function salvaObiettivoMese(valore) {
   else { _obiettiviMeseCache[k] = v; }
   try {
     await jsonp({action:'salvaObiettivoMese', mese, anno, valore: v===''?0:v, reset: v===''?'1':'0'});
+    // Aggiorna anche la cache locale
+    if(v===''){ delete _obiettiviMeseCache[k]; }
+    else { _obiettiviMeseCache[k] = parseFloat(v); }
+    // Invalida la cache dati per ricalcolare con il nuovo obiettivo
+    invalidaCache(mese, parseInt(anno));
     mostraToast('✅ Obiettivo salvato!', 'ok');
   } catch(e) {
-    mostraToast('❌ Errore salvataggio', 'err');
+    mostraToast('❌ Errore salvataggio obiettivo', 'err');
   }
   caricaAndamento();
 }
@@ -1820,6 +1856,163 @@ async function aggiornaObiettivoMese() {
   } catch(e) {
     if(inp) inp.value = '';
   }
+}
+
+
+// ===== LISTA CHIUSURE GIORNALIERE =====
+async function caricaMese() {
+  const mese = parseInt(document.getElementById('sel-mese').value);
+  const anno = parseInt(document.getElementById('sel-anno').value);
+  const cont = document.getElementById('lista-container');
+  if(cont) cont.innerHTML = '<div class="loading">⏳ Caricamento...</div>';
+  try {
+    const d = await getAppData(mese, anno);
+    const righe = d.righe || [];
+    // Totali
+    let totCassa=0, totRik=0, totPos=0, totTab=0, totUbi=0, giorniAperti=0;
+    righe.forEach(r=>{
+      if(r.riposo==='1'||r.riposo===1||r.riposo===true) return;
+      totCassa += parseFloat(r.chiusura)||0;
+      totRik   += parseFloat(r.riccardo)||0;
+      totPos   += parseFloat(r.posUbify)||0;
+      totTab   += parseFloat(r.tabacchi)||0;
+      totUbi   += parseFloat(r.ubify)||0;
+      giorniAperti++;
+    });
+    const totIncasso = totCassa + totUbi;
+    // Aggiorna stat bar
+    const set = (id,v) => { const el=document.getElementById(id); if(el) el.textContent=fmt(v); };
+    set('s-cassa', totCassa); set('s-rik', totRik); set('s-pos', totPos);
+    set('s-tab', totTab);
+    const sAggi = document.getElementById('s-aggi');
+    if(sAggi) sAggi.textContent = '—';
+    const sTot = document.getElementById('s-tot');
+    if(sTot) sTot.textContent = fmt(totIncasso);
+    // Lista giorni
+    if(!cont) return;
+    if(righe.length === 0){ cont.innerHTML = '<div class="empty"><div class="empty-icon">📋</div><p>Nessun dato per questo mese</p></div>'; return; }
+    // Ordina per data decrescente
+    const sorted = [...righe].sort((a,b)=>new Date(b.data)-new Date(a.data));
+    let html = '';
+    sorted.forEach(r => {
+      const isRiposo = r.riposo==='1'||r.riposo===1||r.riposo===true;
+      const cassa = parseFloat(r.chiusura)||0;
+      const ubi   = parseFloat(r.ubify)||0;
+      const rik   = parseFloat(r.riccardo)||0;
+      const tot   = cassa + ubi;
+      const sogGio = getImpostazione('obiettivo_giornaliero');
+      const col = isRiposo ? '#aaa' : (tot >= sogGio ? '#1D9E75' : tot >= sogGio*0.8 ? '#F59E0B' : '#E24B4A');
+      const data = r.data || '';
+      const giorno = r.giorno || '';
+      html += `<div class="card" style="padding:12px;margin-bottom:6px;border-left:4px solid ${col}">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <div style="font-weight:700;font-size:15px">${giorno} ${data.slice(8,10)}/${data.slice(5,7)}</div>
+            ${isRiposo ? '<div style="color:#aaa;font-size:13px">🔴 Riposo</div>' :
+              `<div style="font-size:12px;color:#666">☕ ${fmt(cassa)} + 🎰 ${fmt(ubi)}${rik>0?' + 👤 '+fmt(rik):''}</div>`}
+            ${r.note && r.note!=='RIPOSO' ? `<div style="font-size:11px;color:#999;margin-top:2px">📝 ${r.note}</div>` : ''}
+          </div>
+          <div style="text-align:right">
+            ${!isRiposo ? `<div style="font-size:20px;font-weight:800;color:${col}">€${fmt(tot)}</div>` : ''}
+            <button onclick="apriModificaGiorno('${data}',${mese},${anno})" style="font-size:11px;background:none;border:1px solid #ddd;border-radius:6px;padding:3px 8px;cursor:pointer;margin-top:4px">✏️</button>
+          </div>
+        </div>
+      </div>`;
+    });
+    cont.innerHTML = html;
+  } catch(e) {
+    if(cont) cont.innerHTML = '<div class="empty"><div class="empty-icon">📡</div><p>Errore caricamento. Riprova.</p><button onclick="invalidaCache('+parseInt(document.getElementById('sel-mese').value)+','+document.getElementById('sel-anno').value+');caricaMese()" class="btn-save" style="margin-top:10px">↻ Riprova</button></div>';
+  }
+}
+
+function caricaLista() {
+  caricaMese();
+}
+
+
+// ===== DETTAGLIO EVENTO =====
+function apriDettaglioEvento(idx) {
+  const eventi = caricaEventiStorage();
+  const ev = eventi[idx];
+  if (!ev) return;
+  document.getElementById('modal-ev-titolo').textContent = ev.nome + (ev.date ? ' — ' + ev.date : '');
+  const margine = ev.incasso - ev.costo;
+  const colM = margine >= 0 ? '#1D9E75' : '#E24B4A';
+
+  let html = '';
+
+  // Riepilogo economico
+  html += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px">
+    <div style="background:#E8F5E9;border-radius:12px;padding:12px;text-align:center">
+      <div style="font-size:11px;color:#1D9E75;font-weight:700">💰 INCASSO</div>
+      <div style="font-size:22px;font-weight:800;color:#1D9E75">${fmt(ev.incasso)}</div>
+      <div style="font-size:11px;color:#888">Cassa ${fmt(ev.cassa||0)} + Riki ${fmt(ev.riki||0)}</div>
+    </div>
+    <div style="background:#FFF3E0;border-radius:12px;padding:12px;text-align:center">
+      <div style="font-size:11px;color:#E65100;font-weight:700">💸 COSTI</div>
+      <div style="font-size:22px;font-weight:800;color:#E65100">${fmt(ev.costo||0)}</div>
+    </div>
+  </div>
+  <div style="background:${margine>=0?'#E8F5E9':'#FFEBEE'};border-radius:12px;padding:12px;text-align:center;margin-bottom:16px">
+    <div style="font-size:11px;color:${colM};font-weight:700">📊 MARGINE NETTO</div>
+    <div style="font-size:26px;font-weight:800;color:${colM}">${margine>=0?'+':''}${fmt(margine)}</div>
+  </div>`;
+
+  // Voci di costo dettagliate
+  if (ev.voci_costo && ev.voci_costo.length > 0) {
+    html += `<div style="font-weight:700;font-size:14px;margin-bottom:8px;color:#333">💸 Dettaglio costi</div>`;
+    let totFatt = 0, totNoFatt = 0;
+    ev.voci_costo.forEach(v => {
+      const col = v.fatturata ? '#E65100' : '#8B6914';
+      const badge = v.fatturata ? '🧾' : '💵';
+      html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px;border-bottom:1px solid #f0f0f0">
+        <span style="font-size:13px">${badge} ${v.nome}</span>
+        <span style="font-weight:700;color:${col}">${fmt(v.importo)}</span>
+      </div>`;
+      if(v.fatturata) totFatt += v.importo||0;
+      else totNoFatt += v.importo||0;
+    });
+    html += `<div style="display:flex;gap:8px;margin-top:8px;margin-bottom:16px">
+      <div style="flex:1;background:#FFF3E0;border-radius:8px;padding:8px;text-align:center;font-size:12px">
+        🧾 Fatturati<br><strong>${fmt(totFatt)}</strong>
+      </div>
+      <div style="flex:1;background:#FFF9C4;border-radius:8px;padding:8px;text-align:center;font-size:12px">
+        💵 Non fatturati<br><strong>${fmt(totNoFatt)}</strong>
+      </div>
+    </div>`;
+  }
+
+  // Lista della spesa
+  if (ev.spesa && ev.spesa.length > 0) {
+    html += `<div style="font-weight:700;font-size:14px;margin-bottom:8px;color:#333">📋 Lista della spesa</div>`;
+    ev.spesa.forEach(s => {
+      const check = s.acquistato ? '✅' : '⬜';
+      html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:7px;border-bottom:1px solid #f0f0f0">
+        <span style="font-size:13px">${check} ${s.nome}</span>
+        <span style="font-size:12px;color:#888">${s.qty||''}${s.prezzo?' — '+fmt(s.prezzo):''}${s.note?' ('+s.note+')':''}</span>
+      </div>`;
+    });
+    html += '<div style="margin-bottom:16px"></div>';
+  }
+
+  // Note
+  html += `<div style="font-weight:700;font-size:14px;margin-bottom:6px;color:#333">📝 Note</div>
+  <textarea id="modal-ev-note" rows="4" style="width:100%;padding:10px;border:1.5px solid #ddd;border-radius:10px;font-size:13px;box-sizing:border-box">${ev.note||''}</textarea>
+  <button onclick="salvaNoteEvento(${idx})" style="width:100%;margin-top:8px;padding:12px;background:#1a1410;color:#D4A843;border:none;border-radius:12px;font-size:14px;font-weight:700;cursor:pointer">💾 Salva note</button>`;
+
+  html += `<div style="height:20px"></div>`;
+  document.getElementById('modal-ev-content').innerHTML = html;
+  document.getElementById('modal-evento').style.display = 'block';
+}
+
+function salvaNoteEvento(idx) {
+  const eventi = caricaEventiStorage();
+  if (!eventi[idx]) return;
+  eventi[idx].note = document.getElementById('modal-ev-note').value;
+  salvaEventiStorage(eventi);
+  mostraToast('✅ Note salvate!', 'ok');
+  // Salva anche su Sheet in background
+  try { salvaEventoSheet(eventi[idx]); } catch(e) {}
 }
 </script>
 
@@ -1941,6 +2134,17 @@ async function aggiornaObiettivoMese() {
     <button onclick="inviaWhatsApp()" style="width:100%;margin-top:16px;padding:14px;background:#25D366;color:#fff;border:none;border-radius:12px;font-size:15px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px">
       <span style="font-size:20px">📲</span> Invia su WhatsApp
     </button>
+  </div>
+</div>
+
+<!-- MODAL DETTAGLIO EVENTO -->
+<div id="modal-evento" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:9999;overflow-y:auto">
+  <div style="background:#fff;margin:20px auto;max-width:500px;border-radius:20px;overflow:hidden">
+    <div style="background:#1a1410;padding:16px;display:flex;justify-content:space-between;align-items:center">
+      <div style="color:#D4A843;font-weight:700;font-size:16px" id="modal-ev-titolo">Dettaglio Evento</div>
+      <button onclick="document.getElementById('modal-evento').style.display='none'" style="background:none;border:none;color:#fff;font-size:22px;cursor:pointer">✕</button>
+    </div>
+    <div id="modal-ev-content" style="padding:16px"></div>
   </div>
 </div>
 </body>
