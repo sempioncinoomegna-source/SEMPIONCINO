@@ -397,6 +397,42 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 const SCRIPT_URL='https://script.google.com/macros/s/AKfycbwFeeT_7Z-FpH1F1D8gjfyvDVXhZryTc2VJ8uLegYTQR6E_ch4cDc1VXIoIKnG19h_o/exec';
+
+// ===== CACHE GLOBALE — una sola chiamata al server per tutti i tab =====
+const _appCache = {};
+let _cacheLoading = false;
+let _cacheCallbacks = [];
+
+async function getAppData(mese, anno) {
+  const key = anno + '_' + mese;
+  if (_appCache[key]) return _appCache[key];
+  if (_cacheLoading === key) {
+    // Aspetta che la chiamata in corso finisca
+    return new Promise(resolve => _cacheCallbacks.push({key, resolve}));
+  }
+  _cacheLoading = key;
+  try {
+    const res = await Promise.race([
+      jsonp({action:'leggiTuttoApp', mese, anno}),
+      new Promise((_,rej)=>setTimeout(()=>rej(new Error('Timeout')),15000))
+    ]);
+    _appCache[key] = res;
+    // Sveglia chi stava aspettando
+    _cacheCallbacks.filter(c=>c.key===key).forEach(c=>c.resolve(res));
+    _cacheCallbacks = _cacheCallbacks.filter(c=>c.key!==key);
+    return res;
+  } catch(e) {
+    _cacheLoading = false;
+    throw e;
+  } finally {
+    if(_cacheLoading === key) _cacheLoading = false;
+  }
+}
+
+function invalidaCache(mese, anno) {
+  const key = anno + '_' + mese;
+  delete _appCache[key];
+}
 const GIORNI=['domenica','lunedì','martedì','mercoledì','giovedì','venerdì','sabato'];
 const MESI_NOMI=['Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
 const MESE_INIZIO_POS=4;
@@ -810,6 +846,7 @@ async function salvaModificaGiorno(){
       riposo: riposo?'1':'0'
     });
     document.getElementById('modal-giorno').style.display='none';
+    invalidaCache(mese, anno);
     mostraToast('✅ Salvato!','ok');
     // Alert battuto giornaliero
     const totGiornaliero = (parseFloat(document.getElementById('inp-chiusura').value)||0) + (parseFloat(document.getElementById('inp-ubify').value)||0);
@@ -980,7 +1017,8 @@ async function caricaIncassoEvento(idx) {
       mesiDaLeggere.add(d.getMonth());
     }
     for (const mese of mesiDaLeggere) {
-      const res = await jsonp({action:'leggiMese', mese, anno});
+      const _dAggi = await getAppData(mese, anno);
+    const res = {aggi: _dAggi.aggi, righe: _dAggi.righe};
       const righe = res.righe || [];
       righe.forEach(r => {
         const dataRiga = new Date(r.data + 'T12:00:00');
@@ -1068,10 +1106,9 @@ async function caricaAndamento() {
   const cont = document.getElementById('andamento-container');
   cont.innerHTML = '<div class="loading">⏳ Caricamento...</div>';
   try {
-    const [resInc, resFat] = await Promise.all([
-      jsonp({action:'leggiTutto', mese, anno}),
-      jsonp({action:'leggiFatture', mese, anno})
-    ]);
+    const _dAnd = await getAppData(mese, anno);
+    const resInc = _dAnd;
+    const resFat = {fatture: _dAnd.fatture};
 
     const totCassa = parseFloat(resInc.totCassa)||0;
     const totUbify = parseFloat(resInc.totUbify)||0;
@@ -1438,10 +1475,9 @@ async function controlloFattureIncasso() {
     // Leggi fatture mese corrente + mese successivo (per sfasati)
     const meseSuc = mese === 11 ? 0 : mese+1;
     const annoSuc = mese === 11 ? anno+1 : anno;
-    const [resFat, resFatSuc] = await Promise.all([
-      jsonp({action:'leggiFatture', mese, anno}),
-      jsonp({action:'leggiFatture', mese:meseSuc, anno:annoSuc})
-    ]);
+    const _dCtrl2 = await getAppData(mese, anno);
+    const resFat = {fatture: _dCtrl2.fatture};
+    const resFatSuc = {fatture: _dCtrl2.fattureMeseSuc};
 
     const catBar = ['Caffè','Bar (forniture)','Surgelati/Gelati','Latte','Alimentari/Bevande','Snack/Dolciumi','Cartine/Sigarette elettroniche','Tabacchi (trasporto)'];
     const fatture = resFat.fatture || [];
@@ -1521,10 +1557,9 @@ async function caricaSpeseDaSheet(){
   contS.innerHTML='<div class="loading">⏳ Caricamento fatture...</div>';
   contU.innerHTML='';
   try{
-    const [resFat,resInc]=await Promise.all([
-      jsonp({action:'leggiFatture',mese,anno}),
-      jsonp({action:'leggiTutto',mese,anno})
-    ]);
+    const _dSp = await getAppData(mese, anno);
+    const resFat = {fatture: _dSp.fatture};
+    const resInc = _dSp;
     const fatture=resFat.fatture||[];
     
     // Categories to include in bar costs
@@ -1593,7 +1628,13 @@ async function caricaSpeseDaSheet(){
       htmlS+='<div class="bar-bg"><div class="bar-fill" style="width:'+pct+'%;background:'+col+'"></div></div></div>';
     });
     htmlS+='<div style="display:flex;justify-content:space-between;font-size:14px;font-weight:700;padding:10px 0;border-top:2px solid #eee;margin-top:4px">';
-    htmlS+='<span>TOTALE FATTURE</span><span style="color:#E65100">'+fmt
+    htmlS+='<span>TOTALE FATTURE</span><span style="color:#E65100">'+fmt(totF)+'</span></div>';
+    htmlS+='</div>';
+    contS.innerHTML=htmlS;
+  }catch(e){
+    contS.innerHTML='<div class="card" style="padding:14px"><div style="color:#888;text-align:center">❌ Errore caricamento. Riprova.</div></div>';
+  }
+}
 
 // ===== INIT pagina Inserisci: data/giorno di oggi =====
 (function(){
@@ -1678,10 +1719,7 @@ async function caricaMiniAndamento(){
   const anno = oggi.getFullYear();
   cont.innerHTML = '<div class="loading">⏳ Caricamento...</div>';
   try{
-    const res = await Promise.race([
-      jsonp({action:'leggiTutto', mese, anno}),
-      new Promise((_,rej)=>setTimeout(()=>rej(new Error('Timeout')),10000))
-    ]);
+    const res = await getAppData(mese, anno);
     const righe = res.righe || res.dati || [];
     let totBattuto = 0;
     let giorniAperti = 0;
@@ -1729,13 +1767,6 @@ async function caricaMiniAndamento(){
 
 // Carica mini-andamento all'avvio
 caricaMiniAndamento();
-(totF)+'</span></div>';
-    htmlS+='</div>';
-    contS.innerHTML=htmlS;
-  }catch(e){
-    contS.innerHTML='<div class="card" style="padding:14px"><div style="color:#888;text-align:center">❌ Errore caricamento. Riprova.</div></div>';
-  }
-}
 
 
 (function(){try{var k='sempioncino_eventi';var s=localStorage.getItem(k);var p=s?JSON.parse(s):[];if(!p.some(function(e){return e.id==='birra_w1';})){var n=[{"id": "birra_w1", "nome": "Festa Birra W1", "date": "26-27 set 2026", "incasso": 9785.8, "cassa": 2795.8, "ubify": 0, "riki": 6990.0, "costo": 5283.96, "voci_costo": [{"nome": "Birra 45 fusti x60", "importo": 2700.0, "fatturata": true}, {"nome": "Birra extra", "importo": 600.0, "fatturata": true}, {"nome": "Fusti Maulini CO2", "importo": 320.07, "fatturata": true}, {"nome": "Bicchieri f44", "importo": 101.89, "fatturata": true}, {"nome": "Bicchieri f47", "importo": 126.0, "fatturata": true}, {"nome": "Bicchieri f48", "importo": 36.0, "fatturata": true}, {"nome": "Erika W1", "importo": 150.0, "fatturata": false}, {"nome": "Stefania W1", "importo": 100.0, "fatturata": false}, {"nome": "Alessandro W1", "importo": 150.0, "fatturata": false}, {"nome": "Extra W1", "importo": 1000.0, "fatturata": false}], "spesa": [], "note": ""}, {"id": "birra_w2", "nome": "Festa Birra W2", "date": "3-4 ott 2026", "incasso": 7091.5, "cassa": 2591.5, "ubify": 0, "riki": 4500.0, "costo": 1250.0, "voci_costo": [{"nome": "Stefania W2", "importo": 100.0, "fatturata": false}, {"nome": "Alessandro W2", "importo": 150.0, "fatturata": false}, {"nome": "Extra W2", "importo": 1000.0, "fatturata": false}], "spesa": [], "note": ""}];localStorage.setItem(k,JSON.stringify(n.concat(p.filter(function(e){return e.id!=='birra_w1'&&e.id!=='birra_w2';}))));setTimeout(function(){n.forEach(function(ev){if(typeof salvaEventoSheet==='function')salvaEventoSheet(ev);});},3000);}}catch(ex){}})();
